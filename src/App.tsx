@@ -155,9 +155,9 @@ export default function App() {
   });
   const [reels, setReels] = useState<Post[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_user_reels_v2');
-      if (saved) {
-        const parsed: Post[] = JSON.parse(saved);
+      const savedGlobal = localStorage.getItem('aurachat_global_reels_v3') || localStorage.getItem('aurachat_user_reels_v2');
+      if (savedGlobal) {
+        const parsed: Post[] = JSON.parse(savedGlobal);
         return parsed
           .filter((r) => r.mediaUrl && !r.mediaUrl.startsWith('blob:'))
           .map((r) => ({
@@ -170,9 +170,9 @@ export default function App() {
   });
   const [posts, setPosts] = useState<Post[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_user_posts_v2');
-      if (saved) {
-        const parsed: Post[] = JSON.parse(saved);
+      const savedGlobal = localStorage.getItem('aurachat_global_posts_v3') || localStorage.getItem('aurachat_user_posts_v2');
+      if (savedGlobal) {
+        const parsed: Post[] = JSON.parse(savedGlobal);
         return parsed
           .filter((p) => !p.mediaUrl || !p.mediaUrl.startsWith('blob:'))
           .map((p) => ({
@@ -202,12 +202,14 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_user_reels_v2', JSON.stringify(reels));
+      localStorage.setItem('aurachat_global_reels_v3', JSON.stringify(reels));
     } catch (e) {}
   }, [reels]);
 
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_user_posts_v2', JSON.stringify(posts));
+      localStorage.setItem('aurachat_global_posts_v3', JSON.stringify(posts));
     } catch (e) {}
   }, [posts]);
 
@@ -255,14 +257,16 @@ export default function App() {
   };
 
   const handleToggleLikePost = (postId: string) => {
+    let updatedLikesCount = 0;
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
         const nextLiked = !p.isLiked;
+        updatedLikesCount = Math.max(0, p.likesCount + (nextLiked ? 1 : -1));
         return {
           ...p,
           isLiked: nextLiked,
-          likesCount: Math.max(0, p.likesCount + (nextLiked ? 1 : -1))
+          likesCount: updatedLikesCount
         };
       })
     );
@@ -270,13 +274,24 @@ export default function App() {
       prev.map((r) => {
         if (r.id !== postId) return r;
         const nextLiked = !r.isLiked;
+        if (!updatedLikesCount) {
+          updatedLikesCount = Math.max(0, r.likesCount + (nextLiked ? 1 : -1));
+        }
         return {
           ...r,
           isLiked: nextLiked,
-          likesCount: Math.max(0, r.likesCount + (nextLiked ? 1 : -1))
+          likesCount: updatedLikesCount
         };
       })
     );
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({ type: 'POST_LIKE_TOGGLE', postId, likesCount: updatedLikesCount });
+        ch.close();
+      }
+    } catch {}
   };
 
   const handleDeleteComment = (postId: string, commentId: string) => {
@@ -301,6 +316,14 @@ export default function App() {
         };
       })
     );
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({ type: 'DELETE_POST_COMMENT', postId, commentId });
+        ch.close();
+      }
+    } catch {}
   };
 
   const handleAddPostComment = (postId: string, comment: any) => {
@@ -324,6 +347,14 @@ export default function App() {
         };
       })
     );
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({ type: 'NEW_POST_COMMENT', postId, comment });
+        ch.close();
+      }
+    } catch {}
   };
 
   // Modals & Calls
@@ -1016,6 +1047,72 @@ export default function App() {
         return;
       }
 
+      if (data.type === 'POST_LIKE_TOGGLE' && data.postId) {
+        setPosts((prev) =>
+          prev.map((p) => (p.id === data.postId ? { ...p, likesCount: data.likesCount ?? p.likesCount } : p))
+        );
+        setReels((prev) =>
+          prev.map((r) => (r.id === data.postId ? { ...r, likesCount: data.likesCount ?? r.likesCount } : r))
+        );
+        return;
+      }
+
+      if (data.type === 'NEW_POST_COMMENT' && data.postId && data.comment) {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === data.postId
+              ? {
+                  ...p,
+                  commentsCount: p.commentsCount + 1,
+                  comments: p.comments.some((c) => c.id === data.comment.id)
+                    ? p.comments
+                    : [...p.comments, data.comment]
+                }
+              : p
+          )
+        );
+        setReels((prev) =>
+          prev.map((r) =>
+            r.id === data.postId
+              ? {
+                  ...r,
+                  commentsCount: r.commentsCount + 1,
+                  comments: r.comments.some((c) => c.id === data.comment.id)
+                    ? r.comments
+                    : [...r.comments, data.comment]
+                }
+              : r
+          )
+        );
+        return;
+      }
+
+      if (data.type === 'DELETE_POST_COMMENT' && data.postId && data.commentId) {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === data.postId
+              ? {
+                  ...p,
+                  commentsCount: Math.max(0, p.commentsCount - 1),
+                  comments: p.comments.filter((c) => c.id !== data.commentId)
+                }
+              : p
+          )
+        );
+        setReels((prev) =>
+          prev.map((r) =>
+            r.id === data.postId
+              ? {
+                  ...r,
+                  commentsCount: Math.max(0, r.commentsCount - 1),
+                  comments: r.comments.filter((c) => c.id !== data.commentId)
+                }
+              : r
+          )
+        );
+        return;
+      }
+
       if (data.type === 'NEW_STORY' && data.story) {
         setStories((prev) => (prev.some((s) => s.id === data.story.id) ? prev : [data.story, ...prev]));
         return;
@@ -1296,27 +1393,77 @@ export default function App() {
   };
 
   // Studio Publish Handlers
-  const handlePublishReel = (newReel: Post) => {
-    setReels((prev) => [newReel, ...prev]);
+  const handlePublishReel = (rawReel: Post) => {
+    const formattedReel: Post = {
+      ...rawReel,
+      userId: rawReel.userId || currentUser.id,
+      userName: rawReel.userName || currentUser.displayName,
+      userAvatar: rawReel.userAvatar || currentUser.avatarUrl,
+      createdAt: rawReel.createdAt || formatSmartTime(new Date()),
+      viewsCount: rawReel.viewsCount ?? 1
+    };
+
+    setReels((prev) => [formattedReel, ...prev]);
+
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         const ch = new BroadcastChannel('aurachat_live_messages_sync');
-        ch.postMessage({ type: 'NEW_REEL', reel: newReel });
+        ch.postMessage({ type: 'NEW_REEL', reel: formattedReel });
         ch.close();
       }
     } catch {}
+
+    if (!isFirestoreQuotaExceeded()) {
+      savePlatformStateToCloud({
+        savedAccounts,
+        userChatsMap,
+        globalCatalogChats,
+        messagesMap,
+        communities,
+        stories,
+        posts,
+        reels: [formattedReel, ...reels],
+        callsMap: userCallsMap
+      });
+    }
+
     setActiveScreen('reels');
   };
 
-  const handlePublishPost = (newPost: Post) => {
-    setPosts((prev) => [newPost, ...prev]);
+  const handlePublishPost = (rawPost: Post) => {
+    const formattedPost: Post = {
+      ...rawPost,
+      userId: rawPost.userId || currentUser.id,
+      userName: rawPost.userName || currentUser.displayName,
+      userAvatar: rawPost.userAvatar || currentUser.avatarUrl,
+      createdAt: rawPost.createdAt || formatSmartTime(new Date()),
+      viewsCount: rawPost.viewsCount ?? 1
+    };
+
+    setPosts((prev) => [formattedPost, ...prev]);
+
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         const ch = new BroadcastChannel('aurachat_live_messages_sync');
-        ch.postMessage({ type: 'NEW_POST', post: newPost });
+        ch.postMessage({ type: 'NEW_POST', post: formattedPost });
         ch.close();
       }
     } catch {}
+
+    if (!isFirestoreQuotaExceeded()) {
+      savePlatformStateToCloud({
+        savedAccounts,
+        userChatsMap,
+        globalCatalogChats,
+        messagesMap,
+        communities,
+        stories,
+        posts: [formattedPost, ...posts],
+        reels,
+        callsMap: userCallsMap
+      });
+    }
+
     setActiveScreen('posts');
   };
 
