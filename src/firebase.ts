@@ -43,9 +43,45 @@ export interface FirestoreErrorInfo {
   };
 }
 
+// Quota Circuit Breaker state
+let isQuotaExceeded = false;
+let quotaExceededListeners: ((exceeded: boolean) => void)[] = [];
+
+export function isFirestoreQuotaExceeded(): boolean {
+  return isQuotaExceeded;
+}
+
+export function subscribeToQuotaExceeded(callback: (exceeded: boolean) => void): () => void {
+  quotaExceededListeners.push(callback);
+  callback(isQuotaExceeded);
+  return () => {
+    quotaExceededListeners = quotaExceededListeners.filter((cb) => cb !== callback);
+  };
+}
+
+export function setFirestoreQuotaExceeded(exceeded: boolean = true) {
+  if (isQuotaExceeded === exceeded) return;
+  isQuotaExceeded = exceeded;
+  quotaExceededListeners.forEach((cb) => cb(exceeded));
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errString = error instanceof Error ? error.message : String(error);
+
+  if (
+    errString.includes('resource-exhausted') ||
+    errString.includes('Quota limit exceeded') ||
+    errString.includes('quota metric') ||
+    errString.includes('quota')
+  ) {
+    setFirestoreQuotaExceeded(true);
+    console.warn(
+      'Firestore Quota Exceeded (Free daily limit reached). The application seamlessly continues in local persistence mode without network write retries.'
+    );
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errString,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -61,11 +97,21 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 // Initial connection test
 export async function testConnection() {
+  if (isQuotaExceeded) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Please check your Firebase configuration or connectivity.");
+    if (error instanceof Error) {
+      if (error.message.includes('the client is offline')) {
+        console.warn("Please check your Firebase configuration or connectivity.");
+      } else if (
+        error.message.includes('resource-exhausted') ||
+        error.message.includes('Quota limit exceeded') ||
+        error.message.includes('quota')
+      ) {
+        setFirestoreQuotaExceeded(true);
+        console.warn("Firestore daily free quota limit reached. Falling back to local offline mode.");
+      }
     }
   }
 }
@@ -290,6 +336,7 @@ function sanitizeForFirestore<T>(obj: T): T {
  */
 export async function syncAccountToCloud(user: User, userChats?: Chat[]): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isQuotaExceeded) return; // Prevent hammering backend when quota is exhausted
   try {
     const payload = sanitizeForFirestore({
       ...user,
@@ -302,13 +349,31 @@ export async function syncAccountToCloud(user: User, userChats?: Chat[]): Promis
   }
 }
 
+let lastPlatformFingerprint = '';
+
 /**
  * Saves platform state (accounts, chats, channels, messages, communities, posts, reels, stories)
  * to Firestore `/chats/_aurachat_cloud_sync_v2` when online.
  */
 export async function savePlatformStateToCloud(state: CloudPlatformState): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isQuotaExceeded) return; // Halt writes when quota is exhausted
+
   try {
+    const currentFingerprint = JSON.stringify({
+      accounts: state.savedAccounts?.map((a) => a.id),
+      chats: state.globalCatalogChats?.map((c) => c.id),
+      communities: state.communities?.map((c) => c.id),
+      posts: state.posts?.length,
+      reels: state.reels?.length,
+      stories: state.stories?.length
+    });
+
+    if (currentFingerprint === lastPlatformFingerprint) {
+      return; // Deduplicate: do not write identical data
+    }
+    lastPlatformFingerprint = currentFingerprint;
+
     const cleanState = sanitizeForFirestore({
       ...state,
       updatedAt: Date.now()
@@ -325,6 +390,7 @@ export async function savePlatformStateToCloud(state: CloudPlatformState): Promi
 export function subscribeToCloudPlatformState(
   onUpdate: (cloudState: CloudPlatformState) => void
 ): () => void {
+  if (isQuotaExceeded) return () => {};
   try {
     const unsub = onSnapshot(
       doc(db, 'chats', CLOUD_SYNC_DOC_ID),

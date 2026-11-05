@@ -19,7 +19,10 @@ import {
   FileText,
   ExternalLink,
   Trash2,
-  SkipForward
+  SkipForward,
+  Scan,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { 
   playSentSound, 
@@ -146,6 +149,9 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const [selectedFilter, setSelectedFilter] = useState(filters[0]);
   const [timerDelay] = useState<0 | 3 | 10>(0);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  // Zoom & Scale control (0.5x широкий угол / отдалить, 1x стандарт, 2x приблизить)
+  const [zoomLevel, setZoomLevel] = useState<0.5 | 1 | 2>(0.5);
+  const [cameraFit, setCameraFit] = useState<'cover' | 'contain'>('cover');
 
   // Live stream & recording state
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -593,14 +599,23 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
             {/* Viewfinder Media / Stream */}
             <div className="absolute inset-0 z-0 bg-[#0e1621] flex items-center justify-center overflow-hidden">
               {isCameraActive ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{ filter: selectedFilter.css }}
-                  className="w-full h-full object-cover transform scale-x-[-1]"
-                />
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{
+                      filter: selectedFilter.css,
+                      transform: `scale(${zoomLevel === 0.5 ? 0.72 : zoomLevel === 1 ? 1.0 : 1.5}) ${facingMode === 'user' ? 'scaleX(-1)' : ''}`,
+                      transformOrigin: 'center center'
+                    }}
+                    className={`w-full h-full transition-transform duration-200 ${
+                      cameraFit === 'contain' ? 'object-contain' : 'object-cover'
+                    }`}
+                  />
+                  <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/60 via-transparent to-black/30" />
+                </div>
               ) : (
                 <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-[#131c26] to-[#0e1621] p-6 text-center">
                   <div className="w-18 h-18 rounded-full bg-[#1e2a38] border border-[#283748] flex items-center justify-center mb-3">
@@ -708,7 +723,74 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
             </div>
 
             {/* Bottom Controls Area */}
-            <div className="relative z-20 p-4 pb-6 flex flex-col items-center gap-4 bg-gradient-to-t from-black via-black/80 to-transparent">
+            <div className="relative z-20 p-4 pb-6 flex flex-col items-center gap-3 bg-gradient-to-t from-black via-black/80 to-transparent">
+              {/* Zoom & Scale Floating Selector (0.5x, 1x, 2x + Fit Toggle) */}
+              {isCameraActive && (
+                <div className="flex items-center gap-2 mb-1 animate-in fade-in">
+                  <div className="flex items-center bg-black/60 backdrop-blur-md px-1.5 py-1 rounded-full border border-white/20 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playReactionSound();
+                        setZoomLevel(0.5);
+                      }}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        zoomLevel === 0.5
+                          ? 'bg-amber-400 text-black shadow-md font-extrabold scale-105'
+                          : 'text-white/80 hover:text-white'
+                      }`}
+                      title="Широкий угол 0.5x (уменьшить зум, отдалить)"
+                    >
+                      0.5x
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playReactionSound();
+                        setZoomLevel(1);
+                      }}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        zoomLevel === 1
+                          ? 'bg-amber-400 text-black shadow-md font-extrabold scale-105'
+                          : 'text-white/80 hover:text-white'
+                      }`}
+                      title="Стандартный масштаб 1x"
+                    >
+                      1x
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playReactionSound();
+                        setZoomLevel(2);
+                      }}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                        zoomLevel === 2
+                          ? 'bg-amber-400 text-black shadow-md font-extrabold scale-105'
+                          : 'text-white/80 hover:text-white'
+                      }`}
+                      title="Приблизить 2x"
+                    >
+                      2x
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playReactionSound();
+                      setCameraFit((prev) => (prev === 'cover' ? 'contain' : 'cover'));
+                    }}
+                    className={`p-2 rounded-full bg-black/60 backdrop-blur-md border border-white/20 transition cursor-pointer ${
+                      cameraFit === 'contain' ? 'text-amber-400 border-amber-400' : 'text-white/80 hover:text-white'
+                    }`}
+                    title={cameraFit === 'contain' ? 'Режим: Полный обзор кадра (без обрезки)' : 'Режим: Заполнение экрана'}
+                  >
+                    <Scan className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {/* Shutter bar */}
               <div className="w-full flex items-center justify-between px-4">
                 {/* File Upload from device */}

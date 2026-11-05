@@ -323,34 +323,52 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
                 Введите <span className="text-white font-bold">6-значный ПИН-код</span> для доступа к этому профилю:
               </p>
 
-              {/* 6 Digit Input Boxes */}
-              <div className="flex items-center justify-center gap-2 mb-3" onPaste={handlePaste}>
+              {/* 6 Digit Input Boxes masked with dots (скрыто точками) */}
+              <div
+                className="flex items-center justify-center gap-2 mb-3 cursor-pointer"
+                onPaste={handlePaste}
+                onClick={() => {
+                  const nextEmpty = pinDigits.findIndex((d) => !d);
+                  const targetIdx = nextEmpty === -1 ? 5 : nextEmpty;
+                  inputsRef.current[targetIdx]?.focus();
+                }}
+              >
                 {pinDigits.map((digit, idx) => (
-                  <input
+                  <div
                     key={idx}
-                    ref={(el) => {
-                      inputsRef.current[idx] = el;
-                    }}
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleDigitChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleKeyDownInput(idx, e)}
-                    onFocus={() => setActiveInputIndex(idx)}
-                    disabled={isSuccess}
-                    className={`w-11 h-13 text-center text-xl font-bold rounded-xl transition outline-none select-none ${
+                    onClick={() => inputsRef.current[idx]?.focus()}
+                    className={`relative w-11 h-13 rounded-xl flex items-center justify-center transition select-none ${
                       isSuccess
-                        ? 'bg-emerald-500/20 border-2 border-emerald-400 text-emerald-300'
+                        ? 'bg-emerald-500/20 border-2 border-emerald-400'
                         : isShaking
-                        ? 'bg-rose-500/20 border-2 border-rose-400 text-rose-300'
+                        ? 'bg-rose-500/20 border-2 border-rose-400'
                         : digit
-                        ? 'bg-[#243447] border-2 border-[#5288c1] text-white shadow-inner'
+                        ? 'bg-[#243447] border-2 border-[#5288c1] shadow-inner'
                         : activeInputIndex === idx
-                        ? 'bg-[#1e2d3d] border-2 border-[#64b5f6] text-white'
-                        : 'bg-[#1e2d3d] border border-[#2b3e55] text-slate-400'
+                        ? 'bg-[#1e2d3d] border-2 border-[#64b5f6]'
+                        : 'bg-[#1e2d3d] border border-[#2b3e55]'
                     }`}
-                  />
+                  >
+                    <input
+                      ref={(el) => {
+                        inputsRef.current[idx] = el;
+                      }}
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleDigitChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleKeyDownInput(idx, e)}
+                      onFocus={() => setActiveInputIndex(idx)}
+                      disabled={isSuccess}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                    />
+                    {digit ? (
+                      <span className="w-3.5 h-3.5 rounded-full bg-[#64b5f6] shadow-[0_0_10px_rgba(100,181,246,0.9)] animate-in zoom-in-75 duration-100" />
+                    ) : (
+                      <span className="text-slate-600 text-sm font-bold">—</span>
+                    )}
+                  </div>
                 ))}
               </div>
 

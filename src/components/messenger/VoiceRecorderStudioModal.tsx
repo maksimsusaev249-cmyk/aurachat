@@ -347,7 +347,7 @@ export const VoiceRecorderStudioModal: React.FC<VoiceRecorderStudioModalProps> =
               </h3>
               <p className="text-[11px] text-slate-400">
                 {phase === 'recording' 
-                  ? (micStatus === 'recording' ? `🎙️ Реальный микрофон активен • Уровень: ${liveMicLevel}%` : '🎙️ Режим диктофона') 
+                  ? (micStatus === 'recording' ? '🎙️ Идет запись голоса' : '🎙️ Режим диктофона') 
                   : 'Прослушайте свою запись перед отправкой в чат'}
               </p>
             </div>

@@ -360,14 +360,12 @@ export const VideoNoteModal: React.FC<VideoNoteModalProps> = ({
           </div>
         )}
 
-        <h3 className="text-base font-bold text-white mb-0.5 mt-4">Видеосообщение («Кружочек»)</h3>
-        <p className="text-[11px] text-slate-400 mb-4 text-center">
-          {recordedBlobUrl
-            ? 'Прослушайте и проверьте кружочек со звуком перед отправкой'
-            : cameraActive
-            ? `Камера и микрофон активны • Звук: ${isMicMuted ? 'ВЫКЛ' : `${liveMicLevel}%`}`
-            : 'Подключение камеры и микрофона...'}
-        </p>
+        <h3 className="text-base font-bold text-white mb-3 mt-4">Видеосообщение («Кружочек»)</h3>
+        {recordedBlobUrl && (
+          <p className="text-[11px] text-slate-400 mb-4 text-center">
+            Прослушайте кружочек со звуком перед отправкой
+          </p>
+        )}
 
         {/* Circular Viewport */}
         <div
@@ -467,31 +465,14 @@ export const VideoNoteModal: React.FC<VideoNoteModalProps> = ({
             </div>
           )}
 
-          {/* Recording timer & live microphone badge */}
+          {/* Recording timer */}
           {isRecording && (
             <div className="absolute top-3 px-3 py-1 bg-rose-600/90 text-white rounded-full text-xs font-mono font-bold flex items-center gap-1.5 shadow-lg z-20">
               <span className="w-2 h-2 rounded-full bg-white animate-ping" />
               <span>00:{recordSeconds.toString().padStart(2, '0')}</span>
-              <span className="text-[10px] text-rose-100">• 🎙️ {liveMicLevel}%</span>
             </div>
           )}
         </div>
-
-        {/* Live Microphone Sound Bar Indicator */}
-        {!recordedBlobUrl && cameraActive && (
-          <div className="mt-3 w-full max-w-[220px] flex items-center gap-2 bg-[#131c26] px-3 py-1.5 rounded-full border border-[#243344]">
-            <Mic className={`w-3.5 h-3.5 shrink-0 ${isMicMuted ? 'text-rose-400' : 'text-emerald-400'}`} />
-            <div className="flex-1 h-2 bg-[#1e2a38] rounded-full overflow-hidden">
-              <div
-                style={{ width: `${isMicMuted ? 0 : Math.max(6, liveMicLevel)}%` }}
-                className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-75"
-              />
-            </div>
-            <span className="text-[10px] font-mono text-slate-300 w-8 text-right">
-              {isMicMuted ? 'MUTE' : `${liveMicLevel}%`}
-            </span>
-          </div>
-        )}
 
         {/* Controls */}
         <div className="mt-5 flex flex-col items-center gap-2.5 w-full">

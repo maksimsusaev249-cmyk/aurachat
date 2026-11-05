@@ -21,10 +21,10 @@ import {
   Bluetooth,
   Speaker,
   RefreshCw,
-  Camera,
-  AlertCircle,
   MessageSquare,
-  X
+  X,
+  Monitor,
+  ScreenShare
 } from 'lucide-react';
 import {
   startOutgoingDialTone,
@@ -131,6 +131,11 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   const [mainView, setMainView] = useState<'remote' | 'local'>(
     session?.isVideo ? 'local' : 'remote'
   );
+  // Screen sharing state & refs
+  const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement>(null);
+
   const voicemailTimeoutRef = useRef<any>(null);
   const callStatusRef = useRef<CallStatus>('ringing');
 
@@ -356,6 +361,11 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
 
   const stopLocalStream = () => {
     clearInterval(micMeterTimerRef.current);
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+    }
+    setIsScreenSharing(false);
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -541,6 +551,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       localVideoRef.current.play().catch(() => {});
     }
   }, [callStatus, isVideoEnabled, micConnected, cameraConnected, facingMode]);
+
+  // Attach screen share stream to video element
+  useEffect(() => {
+    if (isScreenSharing && screenStreamRef.current && screenVideoRef.current) {
+      screenVideoRef.current.srcObject = screenStreamRef.current;
+      screenVideoRef.current.play().catch(() => {});
+    }
+  }, [isScreenSharing]);
 
   // Voicemail recording timer
   useEffect(() => {
@@ -793,6 +811,64 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     } catch {}
   };
 
+  const handleToggleScreenShare = async () => {
+    if (isScreenSharing) {
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((track) => track.stop());
+        screenStreamRef.current = null;
+      }
+      setIsScreenSharing(false);
+      try {
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const channel = new BroadcastChannel('applet_webrtc_call_sync');
+          channel.postMessage({
+            type: 'SCREEN_SHARE_TOGGLE',
+            callId: session?.callId,
+            isScreenSharing: false
+          });
+          channel.close();
+        }
+      } catch {}
+    } else {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          alert('Демонстрация экрана поддерживается в браузерах на ПК и современных Android устройствах.');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true
+        });
+        screenStreamRef.current = stream;
+        setIsScreenSharing(true);
+
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.onended = () => {
+            setIsScreenSharing(false);
+            if (screenStreamRef.current) {
+              screenStreamRef.current = null;
+            }
+          };
+        }
+
+        try {
+          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+            const channel = new BroadcastChannel('applet_webrtc_call_sync');
+            channel.postMessage({
+              type: 'SCREEN_SHARE_TOGGLE',
+              callId: session?.callId,
+              isScreenSharing: true
+            });
+            channel.close();
+          }
+        } catch {}
+      } catch (err) {
+        console.warn('Демонстрация экрана отменена пользователем:', err);
+      }
+    }
+  };
+
   const formatDuration = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
@@ -805,9 +881,33 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-4 select-none animate-fadeIn">
       <div className="relative w-full max-w-sm h-[690px] max-h-[95dvh] bg-[#0e1621] border border-[#243344] rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between p-5 text-white text-center">
         
-        {/* Main Background Video / Stream (Swappable: Remote or Local) */}
+        {/* Main Background Video / Stream (Swappable: Screen Share, Remote or Local) */}
         <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
-          {isVideoEnabled && (!remoteVideoEnabled || mainView === 'local') ? (
+          {isScreenSharing ? (
+            /* Live Screen Share Stream */
+            <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
+              <video
+                ref={screenVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-contain"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 pointer-events-none" />
+              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-[#0077FF]/90 backdrop-blur-md text-[10px] font-semibold text-white border border-sky-400/40 flex items-center gap-1.5 shadow-lg z-20">
+                <Monitor className="w-3.5 h-3.5 animate-pulse text-sky-200" />
+                <span>Демонстрация экрана активна</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleScreenShare}
+                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md text-[10px] font-semibold text-white border border-rose-400/40 flex items-center gap-1 cursor-pointer transition z-20 shadow"
+                title="Остановить трансляцию"
+              >
+                <span>Остановить</span>
+              </button>
+            </div>
+          ) : isVideoEnabled && (!remoteVideoEnabled || mainView === 'local') ? (
             /* Local Video as Main Fullscreen Background when user's camera is ON */
             <div className="relative w-full h-full">
               <video
@@ -1169,8 +1269,8 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         {/* Center: Contact Avatar, Live Microphone Equalizer & Voicemail UI */}
         <div className="relative z-10 my-auto flex flex-col items-center">
 
-          {/* 1. Ringing or Connected Mode: Show Center Avatar ONLY when camera is OFF */}
-          {(callStatus === 'ringing' || callStatus === 'connected') && !isVideoEnabled && !remoteVideoEnabled && (
+          {/* 1. Ringing or Connected Mode: Show Center Avatar ONLY when camera and screen share are OFF */}
+          {(callStatus === 'ringing' || callStatus === 'connected') && !isVideoEnabled && !remoteVideoEnabled && !isScreenSharing && (
             <div className="flex flex-col items-center">
               <div className="relative">
                 <img
@@ -1338,55 +1438,59 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
             <div className="flex items-center justify-center gap-6 w-full">
               {session.direction === 'incoming' ? (
                 <>
+                  {/* 1. Быстрый ответ */}
                   <button
                     onClick={() => setShowQuickReplies((prev) => !prev)}
                     className="flex flex-col items-center gap-1 cursor-pointer group"
-                    title="Ответить с быстрой фразой (Точка Б)"
+                    title="Быстрый ответ"
                   >
-                    <div className="p-4 rounded-full bg-[#1e2a38] hover:bg-[#283748] text-blue-300 border border-blue-500/30 transition shadow-lg">
+                    <div className="p-4 rounded-full bg-[#1e2a38] hover:bg-[#283748] text-blue-300 border border-blue-500/30 transition shadow-lg group-hover:scale-105">
                       <MessageSquare className="w-6 h-6" />
                     </div>
-                    <span className="text-[11px] font-medium text-blue-300">Быстро</span>
+                    <span className="text-[11px] font-medium text-blue-300">Быстрый ответ</span>
                   </button>
 
+                  {/* 2. Взять трубку */}
                   <button
                     onClick={handleAnswerCall}
                     className="flex flex-col items-center gap-1 cursor-pointer group"
+                    title="Взять трубку"
                   >
                     <div className="p-5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 group-hover:scale-110 transition animate-bounce">
                       <Phone className="w-7 h-7" />
                     </div>
-                    <span className="text-xs font-semibold text-emerald-400">Ответить</span>
+                    <span className="text-xs font-semibold text-emerald-400">Взять трубку</span>
+                  </button>
+
+                  {/* 3. Сбросить */}
+                  <button
+                    onClick={handleEndCall}
+                    className="flex flex-col items-center gap-1 cursor-pointer group"
+                    title="Сбросить"
+                  >
+                    <div className="p-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/40 group-hover:scale-110 transition">
+                      <PhoneOff className="w-7 h-7" />
+                    </div>
+                    <span className="text-xs font-semibold text-rose-400">Сбросить</span>
                   </button>
                 </>
               ) : (
+                /* Исходящий вызов (Вызов абонента...): у звонящего абонента кнопки "Взять трубку" быть НЕ должно! ТОЛЬКО Сбросить */
                 <button
-                  onClick={handleAnswerCall}
+                  onClick={handleEndCall}
                   className="flex flex-col items-center gap-1 cursor-pointer group"
-                  title="Принять вызов (ответить)"
+                  title="Сбросить вызов"
                 >
-                  <div className="p-5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/40 group-hover:scale-110 transition">
-                    <Phone className="w-7 h-7" />
+                  <div className="p-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/40 group-hover:scale-110 transition">
+                    <PhoneOff className="w-7 h-7" />
                   </div>
-                  <span className="text-xs font-semibold text-emerald-400">Взять трубку</span>
+                  <span className="text-xs font-semibold text-rose-400">Сбросить</span>
                 </button>
               )}
-
-              <button
-                onClick={handleEndCall}
-                className="flex flex-col items-center gap-1 cursor-pointer group"
-              >
-                <div className="p-5 rounded-full bg-rose-600 hover:bg-rose-500 text-white shadow-xl shadow-rose-600/40 group-hover:scale-110 transition">
-                  <PhoneOff className="w-7 h-7" />
-                </div>
-                <span className="text-xs font-semibold text-rose-400">
-                  {session.direction === 'incoming' ? 'Отклонить' : 'Сбросить'}
-                </span>
-              </button>
             </div>
           )}
 
-          {/* Connected State Actions (Mute, Speakerphone, Camera, Hang up — exactly 4 buttons) */}
+          {/* Connected State Actions: Mic, Speaker, Screen Share, Camera, End Call */}
           {callStatus === 'connected' && (
             <div className="flex items-center justify-center gap-3 w-full bg-black/60 backdrop-blur-md p-3.5 rounded-full border border-white/10">
               {/* 1. Mic Toggle */}
@@ -1419,7 +1523,21 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 {audioRoute === 'earpiece' && <Volume1 className="w-6 h-6" />}
               </button>
 
-              {/* 3. Video / Camera Toggle */}
+              {/* 3. Screen Share (Демонстрация экрана) */}
+              <button
+                type="button"
+                onClick={handleToggleScreenShare}
+                className={`p-4 rounded-full transition cursor-pointer shadow-lg ${
+                  isScreenSharing
+                    ? 'bg-[#0077FF] text-white shadow-blue-500/50 ring-2 ring-sky-300 animate-pulse'
+                    : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+                title={isScreenSharing ? 'Остановить демонстрацию экрана' : 'Включить демонстрацию экрана (в группе, канале, личных)'}
+              >
+                <Monitor className="w-6 h-6" />
+              </button>
+
+              {/* 4. Video / Camera Toggle */}
               <button
                 type="button"
                 onClick={handleToggleVideo}
@@ -1431,7 +1549,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 {!isVideoEnabled ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
               </button>
 
-              {/* 4. End Call Button */}
+              {/* 5. End Call Button */}
               <button
                 type="button"
                 onClick={handleEndCall}

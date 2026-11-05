@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   initialCurrentUser, 
   initialChats, 
@@ -47,7 +47,13 @@ import { SettingsTab } from './components/messenger/SettingsModal';
 import { GlobalSearchModal } from './components/messenger/GlobalSearchModal';
 import { playReactionSound, playSentSound, playNotificationSound } from './utils/audioUtils';
 import { isVideoMedia } from './utils/mediaUtils';
-import { syncAccountToCloud, savePlatformStateToCloud, subscribeToCloudPlatformState } from './firebase';
+import { 
+  syncAccountToCloud, 
+  savePlatformStateToCloud, 
+  subscribeToCloudPlatformState,
+  isFirestoreQuotaExceeded,
+  subscribeToQuotaExceeded
+} from './firebase';
 import { 
   MessageSquare, 
   Play, 
@@ -63,7 +69,14 @@ import {
   User as UserIcon,
   Layers,
   Users,
-  Search
+  Search,
+  Grid,
+  MoreHorizontal,
+  ChevronRight,
+  X,
+  ExternalLink,
+  Compass,
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -393,7 +406,9 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_currentUser', JSON.stringify(currentUser));
-      syncAccountToCloud(currentUser);
+      if (!isFirestoreQuotaExceeded()) {
+        syncAccountToCloud(currentUser);
+      }
     } catch (e) {}
   }, [currentUser]);
 
@@ -678,6 +693,10 @@ export default function App() {
   const [isTechSpecOpen, setIsTechSpecOpen] = useState(false);
   const [isVideoNoteRecorderOpen, setIsVideoNoteRecorderOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isQuotaExceededState, setIsQuotaExceededState] = useState(isFirestoreQuotaExceeded());
+  const [isQuotaBannerDismissed, setIsQuotaBannerDismissed] = useState(false);
+  const isIncomingCloudUpdateRef = useRef(false);
   const [isCameraStudioOpen, setIsCameraStudioOpen] = useState(false);
   const [cameraStudioMode, setCameraStudioMode] = useState<CaptureMode>('post');
   const [isCreateChatOpen, setIsCreateChatOpen] = useState(false);
@@ -807,9 +826,18 @@ export default function App() {
     } catch (e) {}
   }, [calls, currentUser.id]);
 
+  // Quota exceeded listener
+  useEffect(() => {
+    const unsub = subscribeToQuotaExceeded((exceeded) => {
+      setIsQuotaExceededState(exceeded);
+    });
+    return () => unsub();
+  }, []);
+
   // Real-time Cloud Firestore Sync (when online, syncs accounts, chats, channels, communities, posts, reels, stories)
   useEffect(() => {
     const unsub = subscribeToCloudPlatformState((data) => {
+      isIncomingCloudUpdateRef.current = true;
       const cloudAccounts = data.savedAccounts;
       if (Array.isArray(cloudAccounts) && cloudAccounts.length > 0) {
         setSavedAccounts((prev) => {
@@ -834,12 +862,19 @@ export default function App() {
           return Array.from(map.values());
         });
       }
+      setTimeout(() => {
+        isIncomingCloudUpdateRef.current = false;
+      }, 4000);
     });
     return () => unsub();
   }, []);
 
   useEffect(() => {
+    if (isIncomingCloudUpdateRef.current || isFirestoreQuotaExceeded()) {
+      return;
+    }
     const timer = setTimeout(() => {
+      if (isIncomingCloudUpdateRef.current || isFirestoreQuotaExceeded()) return;
       savePlatformStateToCloud({
         savedAccounts,
         userChatsMap,
@@ -851,7 +886,7 @@ export default function App() {
         reels,
         callsMap: userCallsMap
       });
-    }, 1200);
+    }, 8000);
     return () => clearTimeout(timer);
   }, [savedAccounts, userChatsMap, globalCatalogChats, messagesMap, communities, stories, posts, reels, userCallsMap]);
 
@@ -1701,6 +1736,33 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full max-w-[100vw] bg-[#141414] text-[#e1e3e6] flex flex-col overflow-hidden font-sans select-none">
+      {/* Offline / Quota Notice Banner */}
+      {isQuotaExceededState && !isQuotaBannerDismissed && (
+        <div className="bg-[#1f1a0e] border-b border-amber-600/40 text-amber-200 px-3 py-1.5 text-xs flex items-center justify-between gap-2 z-40 shrink-0">
+          <div className="flex items-center gap-2 truncate text-[11px] sm:text-xs">
+            <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 animate-pulse" />
+            <span className="truncate">
+              AuraChat работает в локальном режиме (данные сохраняются в браузере). Для облачной синхронизации подключите тариф в Firebase:
+            </span>
+            <a
+              href="https://console.firebase.google.com/project/gen-lang-client-0852394880/firestore/databases/ai-studio-telegrammhybridm-0a97c053-a08d-487b-81be-fc2833f735e6/data?openUpgradeDialog=true"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[#71aaeb] hover:underline font-semibold shrink-0 inline-flex items-center gap-1"
+            >
+              Firebase Console <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <button
+            onClick={() => setIsQuotaBannerDismissed(true)}
+            className="p-1 hover:bg-amber-800/40 rounded text-amber-300 hover:text-white shrink-0 cursor-pointer"
+            title="Скрыть"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Main AuraChat Body */}
       <div className="flex-1 min-h-0 min-w-0 w-full flex overflow-hidden">
         {/* Left Sidebar Menu */}
@@ -2121,20 +2183,9 @@ export default function App() {
         )}
       </div>
 
-      {/* Mobile Bottom Navigation Bar — Symmetrical 7-Column Grid with Search on Phone */}
-      <div className="sm:hidden px-2 py-1.5 bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-7 gap-1 items-center z-30 shrink-0">
-        <button
-          onClick={() => {
-            setGlobalSearchInitialQuery('');
-            setIsGlobalSearchOpen(true);
-          }}
-          className="h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border bg-transparent hover:bg-[#2a2a2d] text-[#71aaeb] hover:text-white border-transparent"
-          title="Поиск людей, сообществ, видео и фото"
-        >
-          <Search className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Поиск</span>
-        </button>
-
+      {/* Mobile Bottom Navigation Bar — Exactly 5 Buttons: Новости, Клипы, Чаты, Ещё (внутри Группы и сервисы), Профиль */}
+      <div className="sm:hidden px-2 py-1.5 bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0">
+        {/* 1. Новости */}
         <button
           onClick={() => handleOpenPostsFeed('all')}
           className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
@@ -2142,11 +2193,13 @@ export default function App() {
               ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
               : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
           }`}
+          title="Новости и лента"
         >
           <ImageIcon className="w-[18px] h-[18px] shrink-0" />
           <span className="leading-none truncate">Новости</span>
         </button>
 
+        {/* 2. Клипы */}
         <button
           onClick={handleOpenReelsFeed}
           className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
@@ -2154,11 +2207,13 @@ export default function App() {
               ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
               : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
           }`}
+          title="Клипы"
         >
           <Play className="w-[18px] h-[18px] shrink-0" />
           <span className="leading-none truncate">Клипы</span>
         </button>
 
+        {/* 3. Чаты */}
         <button
           onClick={() => setActiveScreen('chats')}
           className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
@@ -2166,32 +2221,27 @@ export default function App() {
               ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
               : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
           }`}
+          title="Мессенджер"
         >
           <MessageSquare className="w-[18px] h-[18px] shrink-0" />
           <span className="leading-none truncate">Чаты</span>
         </button>
 
+        {/* 4. Ещё (заменяет кнопку «Группы», внутри находятся Группы/Сообщества и сервисы) */}
         <button
-          onClick={() => setIsPlusMenuOpen(true)}
-          className="h-12 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold cursor-pointer transition-all active:scale-95 shadow-md shadow-[#0077FF]/25 border border-[#0077FF]"
-          title="Сервисы и создание"
-        >
-          <Plus className="w-[18px] h-[18px] stroke-[2.5] shrink-0" />
-          <span className="leading-none truncate">Создать</span>
-        </button>
-
-        <button
-          onClick={() => handleOpenPostsFeed('communities')}
+          onClick={() => setIsMoreMenuOpen(true)}
           className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            activeScreen === 'posts' && postsInitialTab === 'communities'
+            isMoreMenuOpen || (activeScreen === 'posts' && postsInitialTab === 'communities') || selectedCommunity !== null
               ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
               : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
           }`}
+          title="Ещё (внутри Группы, Поиск, Создать, Звонки)"
         >
-          <Layers className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Группы</span>
+          <Grid className="w-[18px] h-[18px] shrink-0" />
+          <span className="leading-none truncate">Ещё</span>
         </button>
 
+        {/* 5. Профиль */}
         <button
           onClick={() => {
             setSelectedOtherUser(null);
@@ -2202,11 +2252,186 @@ export default function App() {
               ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
               : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
           }`}
+          title="Мой профиль"
         >
           <UserIcon className="w-[18px] h-[18px] shrink-0" />
           <span className="leading-none truncate">Профиль</span>
         </button>
       </div>
+
+      {/* Modal: «Ещё» (внутри: Группы и Сообщества, Поиск, Создать, Звонки, Контакты, Камера, Настройки) */}
+      {isMoreMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center items-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 p-0 sm:p-4"
+          onClick={() => setIsMoreMenuOpen(false)}
+        >
+          <div
+            className="w-full sm:max-w-md bg-[#1e1e20] border border-[#2e2e30] rounded-t-2xl sm:rounded-2xl p-4 shadow-2xl flex flex-col gap-3.5 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-[#2e2e30]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#0077FF]/15 text-[#0077FF] flex items-center justify-center">
+                  <Grid className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white leading-none">Ещё</h3>
+                  <p className="text-[11px] text-[#939393] mt-0.5">Сервисы и разделы AuraChat</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMoreMenuOpen(false)}
+                className="w-8 h-8 rounded-full bg-[#2a2a2e] hover:bg-[#333338] text-[#939393] hover:text-white flex items-center justify-center transition cursor-pointer"
+                title="Закрыть"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Главный блок: Группы и Сообщества (как запросил пользователь: за место кнопки группы кнопка еще, а внутри группы) */}
+            <div
+              onClick={() => {
+                setIsMoreMenuOpen(false);
+                handleOpenPostsFeed('communities');
+              }}
+              className="p-3.5 rounded-xl bg-linear-to-r from-[#0077FF]/25 via-[#0055CC]/15 to-[#252528] border-2 border-[#0077FF]/50 hover:border-[#0077FF] transition-all cursor-pointer flex items-center justify-between group active:scale-[0.99] shadow-lg shadow-[#0077FF]/15"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0077FF] text-white flex items-center justify-center shadow-md shadow-[#0077FF]/35 shrink-0">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-sm text-white group-hover:text-[#71aaeb] transition">
+                      Группы и Сообщества
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#0077FF] text-white text-[10px] font-bold">
+                      {communities.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5 line-clamp-1">
+                    Лента публикаций групп, каналы, паблики и сообщества
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#71aaeb] group-hover:translate-x-0.5 transition" />
+            </div>
+
+            {/* Сетка остальных быстрых действий */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Поиск */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setGlobalSearchInitialQuery('');
+                  setIsGlobalSearchOpen(true);
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-[#0077FF]/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#0077FF]/20 text-[#0077FF] flex items-center justify-center shrink-0">
+                  <Search className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Поиск</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Люди, видео, фото</span>
+                </div>
+              </button>
+
+              {/* Создать */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsPlusMenuOpen(true);
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-emerald-500/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Создать</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Пост, клип, чат</span>
+                </div>
+              </button>
+
+              {/* Звонки */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsCallHistoryOpen(true);
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-indigo-500/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95 relative"
+              >
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Звонки</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Журнал и вызовы</span>
+                </div>
+                {missedCallsCount > 0 && (
+                  <span className="absolute top-2 right-2 px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-bold">
+                    {missedCallsCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Друзья и контакты */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setIsContactsOpen(true);
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-amber-500/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Контакты</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Друзья и пользователи</span>
+                </div>
+              </button>
+
+              {/* Камера / Студия */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  setCameraStudioMode('post');
+                  setIsCameraStudioOpen(true);
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-pink-500/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center shrink-0">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Камера</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Фото, кружочки</span>
+                </div>
+              </button>
+
+              {/* Настройки */}
+              <button
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  handleOpenSettings('profile');
+                }}
+                className="p-3 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#333338] hover:border-zinc-400/40 transition flex items-center gap-3 text-left cursor-pointer active:scale-95"
+              >
+                <div className="w-8 h-8 rounded-lg bg-zinc-500/20 text-zinc-300 flex items-center justify-center shrink-0">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="font-semibold text-xs text-white block truncate">Настройки</span>
+                  <span className="text-[10px] text-[#939393] block truncate">Профиль, аккаунты</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODALS & OVERLAYS --- */}
 

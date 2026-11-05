@@ -364,18 +364,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     >
       <div id="recaptcha-auth-container" />
 
-      {/* Top Close Button if user is already logged in and opened modal from menu */}
-      {onClose && isLoggedIn && (
-        <div className="w-full max-w-md mx-auto px-6 pt-5 flex justify-end shrink-0">
-          <button
-            onClick={onClose}
-            className="p-2.5 rounded-full bg-[#17212b] border border-[#243344] text-slate-300 hover:text-white transition cursor-pointer"
-            title="Вернуться в систему"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
+      {/* Top action button: always allow entering the system immediately */}
+      <div className="w-full max-w-md mx-auto px-6 pt-5 flex items-center justify-between shrink-0">
+        <span className="text-[11px] font-medium text-slate-400">AuraChat v2.5</span>
+        <button
+          onClick={() => {
+            playReactionSound();
+            const target = lastUser || (allProfiles.length > 0 ? allProfiles[0] : null);
+            if (target) {
+              onLogin(target);
+            } else if (onClose) {
+              onClose();
+            }
+          }}
+          className="px-3.5 py-1.5 rounded-full bg-[#17212b] hover:bg-[#202b36] border border-[#30445a] hover:border-[#64b5f6] text-xs font-semibold text-[#64b5f6] hover:text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+          title="Войти сразу в систему"
+        >
+          <span>В систему</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       {/* Main Full-Screen Centered Content */}
       <div className="flex-1 w-full max-w-md mx-auto flex flex-col justify-center px-6 py-8">
@@ -390,8 +398,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* =====================================================================
             ЭКРАН 1: СТАРТОВАЯ СТРАНИЦА НА ВЕСЬ ЭКРАН (По рисунку пользователя)
-            Круглый логотип + Имя приложения + 4 овальные кнопки:
-            [ Профили ] [ По тел. ] [ По почте ] [ Регистрация ]
+            Круглый логотип + Имя приложения + овальные кнопки:
+            [ Профили ] [ По тел. ] [ По почте ] [ Регистрация ] + [ Сразу в систему ]
            ===================================================================== */}
         {view === 'home' && (
           <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in">
@@ -413,9 +421,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </p>
             </div>
 
-            {/* 4 овальные кнопки в столбик как на рисунке */}
-            <div className="w-full max-w-xs space-y-3.5">
-              {/* 1. Профили */}
+            {/* Овальные кнопки в столбик */}
+            <div className="w-full max-w-xs space-y-3">
+              {/* 1. Сразу в систему (без барьеров) */}
+              <button
+                type="button"
+                onClick={() => {
+                  playReactionSound();
+                  const target = lastUser || (allProfiles.length > 0 ? allProfiles[0] : null);
+                  if (target) {
+                    onLogin(target);
+                  } else if (onClose) {
+                    onClose();
+                  }
+                }}
+                className="w-full py-3.5 px-6 rounded-full bg-linear-to-r from-[#0077FF] to-sky-500 hover:from-[#0066DD] hover:to-sky-600 border-2 border-sky-300/40 text-white font-extrabold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-xl shadow-blue-500/30 active:scale-98"
+                title="Войти сразу в систему"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                  <span>Сразу в систему</span>
+                </span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              {/* 2. Профили */}
               <button
                 type="button"
                 onClick={() => {
@@ -434,7 +464,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </span>
               </button>
 
-              {/* 2. По тел. */}
+              {/* 3. По тел. */}
               <button
                 type="button"
                 onClick={() => {
@@ -454,7 +484,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <ArrowRight className="w-4 h-4 text-slate-400" />
               </button>
 
-              {/* 3. По почте */}
+              {/* 4. По почте */}
               <button
                 type="button"
                 onClick={() => {
@@ -474,7 +504,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <ArrowRight className="w-4 h-4 text-slate-400" />
               </button>
 
-              {/* 4. Регистрация */}
+              {/* 5. Регистрация */}
               <button
                 type="button"
                 onClick={() => {
@@ -489,10 +519,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setRegPin('');
                   setView('reg_name');
                 }}
-                className="w-full py-3.5 px-6 rounded-full bg-[#0077FF] hover:bg-[#0066DD] border-2 border-[#64b5f6]/40 text-white font-extrabold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-xl shadow-blue-600/25 active:scale-98"
+                className="w-full py-3.5 px-6 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] hover:border-[#64b5f6] text-white font-bold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-lg active:scale-98"
               >
-                <span>Регистрация</span>
-                <ArrowRight className="w-4 h-4" />
+                <span className="flex items-center gap-3">
+                  <span className="w-4 h-4 text-[#64b5f6] font-black">+</span>
+                  <span>Регистрация нового аккаунта</span>
+                </span>
+                <ArrowRight className="w-4 h-4 text-slate-400" />
               </button>
             </div>
           </div>
