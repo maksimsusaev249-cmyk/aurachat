@@ -166,22 +166,22 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const [flashMode, setFlashMode] = useState<'off' | 'on' | 'auto'>('off');
   const [isRetinaFlash, setIsRetinaFlash] = useState(false);
 
-  // Zoom Levels: 0.5x (ultra-wide), 1x (standard 100%), 2x (telephoto 2x), 3x (3x digital)
-  const [zoomLevel, setZoomLevel] = useState<0.5 | 1 | 2 | 3>(1);
+  // Zoom Levels: 0.5x (ultra-wide), 1x (standard), 2x (telephoto), 5x (super zoom)
+  const [zoomLevel, setZoomLevel] = useState<0.5 | 1 | 2 | 5>(1);
 
-  // Scale guarantees video always fills the frame (never shrinks below 1.0, so frame never runs away)
+  // Scale guarantees video always fills the frame and produces distinct zoom levels
   const getCameraScale = () => {
     switch (zoomLevel) {
       case 0.5:
-        return 1.0; // Widest possible view, 100% full bleed
+        return 1.0; // Widest possible view, full sensor
       case 1:
-        return 1.0; // Standard 1.0x native view (crisp & natural, NO big zoom!)
+        return 1.35; // Standard 1.0x native view
       case 2:
-        return 1.8; // 2x magnification
-      case 3:
-        return 2.5; // 3x magnification
+        return 2.0; // 2x magnification
+      case 5:
+        return 3.8; // 5x super zoom magnification
       default:
-        return 1.0;
+        return 1.35;
     }
   };
 
@@ -197,9 +197,9 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
             zoomLevel === 0.5
               ? min
               : zoomLevel === 1
-              ? min
+              ? min + (max - min) * 0.15
               : zoomLevel === 2
-              ? Math.min(min + (max - min) * 0.4, max)
+              ? min + (max - min) * 0.45
               : max;
           (track as any).applyConstraints?.({
             advanced: [{ zoom: targetZoom }]
@@ -278,10 +278,20 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordIntervalRef = useRef<any>(null);
+  const countdownIntervalRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
   const maxPhotosLimit = limitMode === 'standard' ? 10 : 35;
+
+  const cancelCountdown = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setCountdown(null);
+    playReactionSound();
+  };
 
   // Initialize when modal opens
   useEffect(() => {
@@ -325,7 +335,8 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
     }
   }, [isCameraActive, step]);
 
-  const startCamera = async () => {
+  const startCamera = async (overrideFacing?: 'user' | 'environment') => {
+    const targetFacing = overrideFacing || facingMode;
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
@@ -333,26 +344,23 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
       let stream: MediaStream | null = null;
       const needAudio = mode === 'reel';
 
-      // 3-Tier ultra resilient camera start:
-      // Tier 1: Try ideal resolution with requested facingMode
+      // 3-Tier ultra resilient camera start with exact physical facing mode priority
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: facingMode },
+            facingMode: { exact: targetFacing },
             width: { ideal: 1280 },
             height: { ideal: 720 }
           },
           audio: needAudio
         });
       } catch {
-        // Tier 2: Try without audio (in case microphone is in use or blocked)
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: facingMode } },
-            audio: false
+            video: { facingMode: { ideal: targetFacing } },
+            audio: needAudio
           });
         } catch {
-          // Tier 3: General video fallback
           try {
             stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           } catch {}
@@ -382,6 +390,10 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
     setIsCameraActive(false);
     clearInterval(recordIntervalRef.current);
   };
@@ -389,13 +401,15 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const handleFlipCamera = () => {
     setIsFlipping(true);
     playReactionSound();
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+    const nextFacing = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextFacing);
+    startCamera(nextFacing);
     setTimeout(() => {
       setIsFlipping(false);
     }, 350);
   };
 
-  // Skip button handler ("Там просто будет кнопка пропустить. Там просто будет написать сообщение как пост.")
+  // Skip button handler
   const handleSkipToComposer = () => {
     playReactionSound();
     stopCamera();
@@ -407,12 +421,30 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
 
   // Trigger Capture or Start Recording
   const handleShutterClick = () => {
-    if (timerDelay > 0 && countdown === null) {
+    // If currently recording video, tap shutter to STOP immediately!
+    if (isRecording) {
+      handleStopRecording();
+      return;
+    }
+
+    // If countdown is active, tap to CANCEL!
+    if (countdown !== null) {
+      cancelCountdown();
+      return;
+    }
+
+    if (timerDelay > 0) {
       setCountdown(timerDelay);
-      const timer = setInterval(() => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+      countdownIntervalRef.current = setInterval(() => {
         setCountdown((c) => {
           if (c === null || c <= 1) {
-            clearInterval(timer);
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current);
+              countdownIntervalRef.current = null;
+            }
             setCountdown(null);
             executeShutter();
             return null;
@@ -681,6 +713,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
         quality: quality,
         speed: speed,
         filter: selectedFilter.name,
+        aspectRatio: cameraAspect,
         music: selectedMusic
           ? {
               id: selectedMusic.id,
@@ -732,7 +765,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
         comments: [],
         createdAt: 'Только что',
         filter: selectedFilter.name,
-        aspectRatio: aspectRatio,
+        aspectRatio: cameraAspect || aspectRatio,
         privacy: privacyAudience,
         allowComments,
         allowDuet,
@@ -972,7 +1005,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
 
                     <button
                       type="button"
-                      onClick={startCamera}
+                      onClick={() => startCamera()}
                       className="w-full py-2.5 px-4 rounded-2xl bg-[#1e2a38] hover:bg-[#283748] border border-[#2b3c4f] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition"
                     >
                       <Camera className="w-4 h-4 text-cyan-400" />
@@ -1064,16 +1097,16 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                       type="button"
                       onClick={() => {
                         playReactionSound();
-                        setZoomLevel(3);
+                        setZoomLevel(5);
                       }}
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                        zoomLevel === 3
+                        zoomLevel === 5
                           ? 'bg-white/25 text-[#f1c40f] font-extrabold scale-105'
                           : 'text-white/80 hover:text-white'
                       }`}
-                      title="3x (Телефото)"
+                      title="5x (Супер-зум)"
                     >
-                      3
+                      5
                     </button>
                   </div>
                 </div>

@@ -990,17 +990,43 @@ export default function App() {
         };
       });
 
-      setChats((prev) =>
-        prev.map((c) =>
-          c.id === data.chatId
-            ? {
-                ...c,
-                lastMessage: incomingMsg.content || 'Сообщение',
-                lastMessageTime: 'Только что'
-              }
-            : c
-        )
-      );
+      setChats((prev) => {
+        const exists = prev.some((c) => c.id === data.chatId);
+        if (exists) {
+          return prev.map((c) =>
+            c.id === data.chatId
+              ? {
+                  ...c,
+                  lastMessage: incomingMsg.content || 'Сообщение',
+                  lastMessageTime: 'Только что',
+                  unreadCount: (c.unreadCount || 0) + 1
+                }
+              : c
+          );
+        }
+        const sender = data.senderUser;
+        const newChat: Chat = {
+          id: data.chatId,
+          type: 'direct',
+          title: sender ? sender.displayName : incomingMsg.senderName,
+          avatarUrl: sender ? sender.avatarUrl : incomingMsg.senderAvatar,
+          isPrivate: true,
+          lastMessage: incomingMsg.content || 'Сообщение',
+          lastMessageTime: 'Только что',
+          unreadCount: 1,
+          membersCount: 2,
+          members: [
+            {
+              userId: incomingMsg.senderId,
+              displayName: sender ? sender.displayName : incomingMsg.senderName,
+              username: sender ? sender.username : incomingMsg.senderName,
+              avatarUrl: sender ? sender.avatarUrl : incomingMsg.senderAvatar,
+              role: 'owner'
+            }
+          ]
+        };
+        return [newChat, ...prev];
+      });
 
       // Play soft notification sound
       playNotificationSound(incomingMsg.senderName, incomingMsg.content);

@@ -503,7 +503,11 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                       onError={() =>
                         setVideoFailedMap((prev) => ({ ...prev, [reel.id]: true }))
                       }
-                      className="w-full h-full object-cover select-none"
+                      className={`w-full h-full select-none ${
+                        reel.aspectRatio === '1:1' || reel.aspectRatio === '3:4' || reel.aspectRatio === '16:9'
+                          ? 'object-contain'
+                          : 'object-cover'
+                      }`}
                     />
                   ) : reel.mediaUrl && !imageFailedMap[reel.id] ? (
                     <img
@@ -513,7 +517,11 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                       onError={() =>
                         setImageFailedMap((prev) => ({ ...prev, [reel.id]: true }))
                       }
-                      className="w-full h-full object-cover select-none"
+                      className={`w-full h-full select-none ${
+                        reel.aspectRatio === '1:1' || reel.aspectRatio === '3:4' || reel.aspectRatio === '16:9'
+                          ? 'object-contain'
+                          : 'object-cover'
+                      }`}
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-[#1b2838] via-[#141d29] to-[#0d131a]">

@@ -756,12 +756,14 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
               {hasMedia && (
                 <div 
                   className={`relative bg-black overflow-hidden group w-full ${
-                    post.aspectRatio === '9:16' 
-                      ? 'aspect-[9/16] max-h-[520px]' 
-                      : post.aspectRatio === '4:5' 
-                      ? 'aspect-[4/5] max-h-[480px]' 
-                      : post.aspectRatio === '16:9' 
-                      ? 'aspect-video' 
+                    post.aspectRatio === '3:4'
+                      ? 'aspect-[3/4] max-h-[520px]'
+                      : post.aspectRatio === '9:16' || post.aspectRatio === 'full'
+                      ? 'aspect-[9/16] max-h-[520px]'
+                      : post.aspectRatio === '4:5'
+                      ? 'aspect-[4/5] max-h-[480px]'
+                      : post.aspectRatio === '16:9'
+                      ? 'aspect-video'
                       : 'aspect-square'
                   }`}
                 >

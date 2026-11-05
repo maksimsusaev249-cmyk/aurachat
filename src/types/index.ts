@@ -230,7 +230,7 @@ export interface Post {
   quality?: string;
   speed?: string;
   filter?: string;
-  aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9';
+  aspectRatio?: '1:1' | '4:5' | '9:16' | '16:9' | '3:4' | 'full';
   privacy?: 'everyone' | 'subscribers' | 'friends' | 'only_me';
   allowComments?: boolean;
   allowDuet?: boolean;
