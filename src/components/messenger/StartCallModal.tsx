@@ -14,6 +14,7 @@ import {
   Grid
 } from 'lucide-react';
 import { initialContactsList, ContactItem } from './ContactsModal';
+import { User } from '../../types';
 
 interface StartCallModalProps {
   isOpen: boolean;
@@ -23,6 +24,8 @@ interface StartCallModalProps {
   onStartCallToNumber?: (phoneNumber: string, isVideo: boolean) => void;
   onSimulateIncomingCall?: (callerName?: string, isVideo?: boolean, avatarUrl?: string) => void;
   onOpenHistory?: () => void;
+  savedAccounts?: User[];
+  currentUserId?: string;
 }
 
 export const StartCallModal: React.FC<StartCallModalProps> = ({
@@ -32,7 +35,9 @@ export const StartCallModal: React.FC<StartCallModalProps> = ({
   onStartCallWithNumber,
   onStartCallToNumber,
   onSimulateIncomingCall,
-  onOpenHistory
+  onOpenHistory,
+  savedAccounts = [],
+  currentUserId
 }) => {
   // Tabs: 'dialpad' (набор звонка / клавиатура) | 'contacts' (список контактов)
   const [activeTab, setActiveTab] = useState<'dialpad' | 'contacts'>('dialpad');
@@ -72,7 +77,28 @@ export const StartCallModal: React.FC<StartCallModalProps> = ({
 
   if (!isOpen) return null;
 
-  const contactsList = initialContactsList;
+  const contactsList = React.useMemo(() => {
+    const map = new Map<string, ContactItem>();
+    initialContactsList.forEach((c) => {
+      map.set(c.username.toLowerCase(), c);
+    });
+    savedAccounts.forEach((acc) => {
+      if (currentUserId && acc.id === currentUserId) return;
+      const key = acc.username.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          userId: acc.id,
+          displayName: acc.displayName,
+          username: acc.username,
+          phone: acc.phone || acc.email || 'Пользователь AuraChat',
+          avatarUrl: acc.avatarUrl,
+          isOnline: true,
+          statusText: 'в сети'
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [savedAccounts, currentUserId]);
 
   const filteredContacts = contactsList.filter((c) =>
     c.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||

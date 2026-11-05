@@ -2868,6 +2868,8 @@ export default function App() {
         onStartCallToNumber={handleStartCallToNumber}
         onSimulateIncomingCall={handleSimulateIncomingCall}
         onOpenHistory={() => setIsCallHistoryOpen(true)}
+        savedAccounts={savedAccounts}
+        currentUserId={currentUser.id}
       />
 
       {/* 24h Story Viewer */}
