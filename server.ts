@@ -43,7 +43,6 @@ async function createServer() {
   });
 
   if (!isProd) {
-    // Development mode: Mount Vite dev middleware dynamically
     try {
       const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
@@ -69,14 +68,20 @@ async function createServer() {
         }
       });
     } catch (e) {
-      console.warn('Vite dev middleware import failed, falling back to static files', e);
+      console.warn('Vite dev middleware fallback', e);
     }
   }
 
-  // Production fallback / Static files serving
-  const distPath = path.resolve(__dirname, 'dist');
+  // Determine dist folder accurately whether running server.ts directly or running compiled dist/server.js
+  const isInsideDist = __dirname.endsWith('dist') || (fs.existsSync(path.join(__dirname, 'index.html')) && fs.existsSync(path.join(__dirname, 'assets')));
+  const distPath = isInsideDist ? __dirname : path.resolve(__dirname, 'dist');
+
+  console.log(`📁 Serving static assets from: ${distPath}`);
+
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
+
+    // SPA Fallback: serve dist/index.html for all non-asset routes
     app.get('*', (req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       if (fs.existsSync(indexPath)) {
@@ -86,7 +91,7 @@ async function createServer() {
         if (fs.existsSync(rootIndex)) {
           res.sendFile(rootIndex);
         } else {
-          res.status(404).send('AuraChat index.html not found');
+          res.status(404).send('AuraChat dist/index.html not found');
         }
       }
     });
