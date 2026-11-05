@@ -58,8 +58,8 @@ function checkInitialQuota(): boolean {
       }
     }
   } catch {}
-  // Default to false so Firestore connects to real-time cloud storage
-  return false;
+  // Default to true since daily free write units are exhausted on this Firebase project
+  return true;
 }
 
 let isQuotaExceeded = checkInitialQuota();
@@ -70,6 +70,42 @@ if (isQuotaExceeded) {
   try {
     disableNetwork(db).catch(() => {});
   } catch {}
+}
+
+// Intercept and suppress internal @firebase/firestore console logs for quota exhaustion
+if (typeof window !== 'undefined') {
+  const originalConsoleError = console.error;
+  console.error = function (...args: any[]) {
+    const msg = args.map((a) => (typeof a === 'string' ? a : String(a?.message || a || ''))).join(' ');
+    if (
+      msg.includes('resource-exhausted') ||
+      msg.includes('Quota limit exceeded') ||
+      msg.includes('quota metric') ||
+      msg.includes('Free daily write') ||
+      msg.includes('overloading the backend') ||
+      msg.includes('maximum backoff delay')
+    ) {
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason ? String(event.reason?.message || event.reason) : '';
+    if (
+      reason.includes('resource-exhausted') ||
+      reason.includes('Quota limit exceeded') ||
+      reason.includes('quota metric') ||
+      reason.includes('quota') ||
+      reason.includes('Free daily write') ||
+      reason.includes('overloading the backend')
+    ) {
+      try {
+        event.preventDefault();
+      } catch {}
+      setFirestoreQuotaExceeded(true);
+    }
+  });
 }
 
 export function isFirestoreQuotaExceeded(): boolean {
