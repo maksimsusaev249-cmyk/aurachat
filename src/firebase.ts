@@ -113,7 +113,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     errString.includes('resource-exhausted') ||
     errString.includes('Quota limit exceeded') ||
     errString.includes('quota metric') ||
-    errString.includes('quota')
+    errString.includes('quota') ||
+    errString.includes('Free daily write') ||
+    errString.includes('overloading the backend')
   ) {
     setFirestoreQuotaExceeded(true);
     return null;
@@ -139,15 +141,7 @@ export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error) {
-      if (
-        error.message.includes('resource-exhausted') ||
-        error.message.includes('Quota limit exceeded') ||
-        error.message.includes('quota')
-      ) {
-        setFirestoreQuotaExceeded(true);
-      }
-    }
+    handleFirestoreError(error, OperationType.GET, 'test/connection');
   }
 }
 
@@ -435,7 +429,8 @@ export function subscribeToCloudPlatformState(
 ): () => void {
   if (isQuotaExceeded) return () => {};
   try {
-    const unsub = onSnapshot(
+    let unsub = () => {};
+    unsub = onSnapshot(
       doc(db, 'chats', CLOUD_SYNC_DOC_ID),
       (snapshot) => {
         if (snapshot.exists()) {
@@ -445,6 +440,7 @@ export function subscribeToCloudPlatformState(
       },
       (err) => {
         handleFirestoreError(err, OperationType.GET, `chats/${CLOUD_SYNC_DOC_ID}`);
+        try { unsub(); } catch {}
       }
     );
     return unsub;
