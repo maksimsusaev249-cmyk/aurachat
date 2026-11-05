@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Subtle circular background in clean soft light gray/slate -->
+  <circle cx="100" cy="100" r="98" fill="#F0F3F6" stroke="#E2E8F0" stroke-width="4"/>
+  
+  <!-- Silhouette head: neutral gray -->
+  <circle cx="100" cy="80" r="38" fill="#718096"/>
+  
+  <!-- Silhouette shoulders/body arc: rounded bottom contour -->
+  <path d="M 40 180 C 40 132, 66 122, 100 122 C 134 122, 160 132, 160 180 Z" fill="#718096"/>
+</svg>

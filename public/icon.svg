@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2aabee"/>
+      <stop offset="50%" stop-color="#229ed9"/>
+      <stop offset="100%" stop-color="#1275b8"/>
+    </linearGradient>
+    <linearGradient id="planeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e1f3fc"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with rounded corners for desktop/icon -->
+  <rect width="512" height="512" rx="120" fill="url(#bgGrad)"/>
+  
+  <!-- Telegram Hybrid Paper Plane -->
+  <path d="M120 252 L368 152 C379 147 391 156 387 167 L342 376 C339 387 325 391 316 383 L250 326 L216 360 C210 366 200 364 198 356 L186 280 L122 260 C113 257 112 245 120 252 Z" 
+        fill="url(#planeGrad)" 
+        filter="drop-shadow(0 8px 16px rgba(0,0,0,0.2))"/>
+        
+  <!-- Wing fold shadow -->
+  <path d="M250 326 L306 270 L216 360 L220 310 Z" fill="#b9def7" opacity="0.85"/>
+  
+  <!-- Camera badge in corner indicating Reels & Video Notes hybrid -->
+  <circle cx="370" cy="370" r="64" fill="#e1306c" stroke="#ffffff" stroke-width="8"/>
+  <circle cx="370" cy="370" r="24" fill="none" stroke="#ffffff" stroke-width="8"/>
+  <circle cx="392" cy="348" r="6" fill="#ffffff"/>
+</svg>
