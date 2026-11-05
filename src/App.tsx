@@ -849,7 +849,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Real-time Cloud Firestore Sync (when online, syncs accounts, chats, channels, communities, posts, reels, stories)
+  // Real-time Cloud Firestore Sync (when online, syncs accounts, chats, channels, communities, posts, reels, stories, messages)
   useEffect(() => {
     const unsub = subscribeToCloudPlatformState((data) => {
       isIncomingCloudUpdateRef.current = true;
@@ -875,6 +875,51 @@ export default function App() {
           const map = new Map(prev.map((c) => [c.id, c]));
           cloudCommunities.forEach((c: Community) => map.set(c.id, c));
           return Array.from(map.values());
+        });
+      }
+      const cloudPosts = data.posts;
+      if (Array.isArray(cloudPosts) && cloudPosts.length > 0) {
+        setPosts((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          cloudPosts.forEach((p: Post) => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      }
+      const cloudReels = data.reels;
+      if (Array.isArray(cloudReels) && cloudReels.length > 0) {
+        setReels((prev) => {
+          const map = new Map(prev.map((r) => [r.id, r]));
+          cloudReels.forEach((r: Post) => map.set(r.id, r));
+          return Array.from(map.values());
+        });
+      }
+      const cloudStories = data.stories;
+      if (Array.isArray(cloudStories) && cloudStories.length > 0) {
+        setStories((prev) => {
+          const map = new Map(prev.map((s) => [s.id, s]));
+          cloudStories.forEach((s: Story) => map.set(s.id, s));
+          return Array.from(map.values());
+        });
+      }
+      const cloudMessagesMap = data.messagesMap;
+      if (cloudMessagesMap && typeof cloudMessagesMap === 'object') {
+        setMessagesMap((prev) => {
+          const updated = { ...prev };
+          let changed = false;
+          Object.keys(cloudMessagesMap).forEach((chatId) => {
+            const remoteMsgs = cloudMessagesMap[chatId];
+            if (Array.isArray(remoteMsgs) && remoteMsgs.length > 0) {
+              const existingMsgs = updated[chatId] || [];
+              const map = new Map(existingMsgs.map((m) => [m.id, m]));
+              remoteMsgs.forEach((m: Message) => map.set(m.id, m));
+              const merged = Array.from(map.values());
+              if (merged.length !== existingMsgs.length) {
+                updated[chatId] = merged;
+                changed = true;
+              }
+            }
+          });
+          return changed ? updated : prev;
         });
       }
       setTimeout(() => {

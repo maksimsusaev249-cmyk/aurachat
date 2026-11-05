@@ -58,8 +58,8 @@ function checkInitialQuota(): boolean {
       }
     }
   } catch {}
-  // Default to true since the server explicitly reported free daily quota exhaustion
-  return true;
+  // Default to false so Firestore connects to real-time cloud storage
+  return false;
 }
 
 let isQuotaExceeded = checkInitialQuota();
