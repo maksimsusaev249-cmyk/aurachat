@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aurachat
+    name: aurachat1
     env: static
     buildCommand: npm run build
     staticPublishPath: ./dist
