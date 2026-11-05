@@ -15,6 +15,13 @@ function copyDistToBuildPlugin(): Plugin {
       try {
         const distDir = path.resolve(__dirname, 'dist');
         const buildDir = path.resolve(__dirname, 'build');
+        const aiStudioAssets = path.resolve(distDir, 'assets', 'aistudio');
+        if (fs.existsSync(aiStudioAssets)) {
+          fs.rmSync(aiStudioAssets, { recursive: true, force: true });
+        }
+        if (fs.existsSync(buildDir)) {
+          fs.rmSync(buildDir, { recursive: true, force: true });
+        }
         if (fs.existsSync(distDir)) {
           fs.cpSync(distDir, buildDir, { recursive: true });
         }
