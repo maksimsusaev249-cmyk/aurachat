@@ -2,8 +2,15 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Capture beforeinstallprompt early before React components mount
 if (typeof window !== 'undefined') {
+  // Clear any stale CacheStorage that could block app startup
+  if ('caches' in window) {
+    caches.keys().then((keys) => {
+      keys.forEach((key) => caches.delete(key));
+    }).catch(() => {});
+  }
+
+  // Capture beforeinstallprompt early for 1-click PWA install
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     (window as any).__aurachatDeferredPrompt = e;
@@ -17,7 +24,12 @@ if (typeof window !== 'undefined') {
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => {
+          reg.update().catch(() => {});
+        })
+        .catch(() => {});
     });
   }
 }

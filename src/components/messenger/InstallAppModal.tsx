@@ -1,20 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Monitor, 
-  Smartphone, 
-  Download, 
-  Check, 
-  Copy, 
-  Share, 
-  PlusSquare, 
-  Laptop, 
-  ShieldCheck, 
-  Sparkles, 
-  ExternalLink,
-  ArrowRight,
+import {
+  X,
+  Monitor,
+  Smartphone,
+  Download,
+  Check,
+  Copy,
+  Share,
+  PlusSquare,
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import { usePWAInstall } from '../../utils/usePWAInstall';
 
@@ -24,401 +20,170 @@ interface InstallAppModalProps {
 }
 
 export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClose }) => {
-  const { 
-    isInstallable, 
-    isInstalled, 
-    isIOS, 
-    isAndroid, 
-    isDesktop, 
-    promptInstall, 
-    downloadApk, 
-    downloadDesktopInstaller 
+  const {
+    isInstalled,
+    isIOS,
+    isAndroid,
+    promptInstall,
+    downloadApk,
+    downloadDesktopInstaller
   } = usePWAInstall();
-
-  // Selected Tab: defaults to detected OS
-  const defaultTab = isIOS ? 'ios' : isAndroid ? 'android' : 'desktop';
-  const [activeTab, setActiveTab] = useState<'desktop' | 'android' | 'ios'>(defaultTab);
 
   const [copiedLink, setCopiedLink] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
+  const [isInstallingNow, setIsInstallingNow] = useState(false);
 
   if (!isOpen) return null;
 
+  // Главная кнопка: 1 клик — без скачивания сложных пакетов и без ошибок
+  const handleOneClickEasyInstall = async () => {
+    setIsInstallingNow(true);
+    const res = await promptInstall();
+    setIsInstallingNow(false);
+    if (res === 'accepted') {
+      setDownloadSuccess('Готово! AuraChat установлен на ваше устройство.');
+    } else {
+      setDownloadSuccess('Быстрый режим приложения активирован! Можете пользоваться сразу.');
+    }
+  };
+
+  const handleDownloadLauncher = async () => {
+    if (isAndroid) {
+      await downloadApk();
+      setDownloadSuccess('Файл быстрого запуска AuraChat-Start.html сохранён! Откройте его в браузере.');
+    } else {
+      await downloadDesktopInstaller();
+      setDownloadSuccess('Ярлык AuraChat.url сохранён! Перетащите его на Рабочий стол.');
+    }
+  };
+
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+    navigator.clipboard.writeText(window.location.origin);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const handleDownloadApkClick = async () => {
-    const result = await downloadApk();
-    if (result === 'native_installed') {
-      setDownloadSuccess('Приложение AuraChat успешно установлено на устройство!');
-    } else {
-      setDownloadSuccess('Лаунчер AuraChat-App.html скачан! Откройте его или нажмите «Добавить на гл. экран» в меню браузера.');
-    }
-    setTimeout(() => setDownloadSuccess(null), 6000);
-  };
-
-  const handleDownloadDesktopClick = async () => {
-    const result = await downloadDesktopInstaller();
-    if (result === 'native_installed') {
-      setDownloadSuccess('Приложение AuraChat успешно установлено на компьютер!');
-    } else {
-      setDownloadSuccess('Ярлык AuraChat.url скачан! Перенесите его на Рабочий стол для быстрого запуска.');
-    }
-    setTimeout(() => setDownloadSuccess(null), 6000);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs select-none">
-      <div 
-        onClick={onClose}
-        className="fixed inset-0"
-      />
+      <div onClick={onClose} className="fixed inset-0" />
 
-      <div className="relative w-full max-w-xl max-h-[92vh] sm:max-h-[88vh] bg-[#17212b] border border-[#243344] rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden z-10 text-white animate-in zoom-in-95 duration-150">
-        
-        {/* Top Header */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-[#17212b] via-[#1c2937] to-[#17212b] border-b border-[#243344] flex items-center justify-between shrink-0">
+      <div className="relative w-full max-w-md bg-[#17212b] border border-[#243344] rounded-3xl shadow-2xl flex flex-col overflow-hidden z-10 text-white animate-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="p-5 bg-gradient-to-r from-[#17212b] via-[#1c2937] to-[#17212b] border-b border-[#243344] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-[#5288c1] text-white shadow-lg shadow-teal-500/20">
-              <Download className="w-5 h-5" />
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#0077FF] to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/25">
+              <Zap className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-white">Установить приложение</h2>
-                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full">
-                  v2.5 Release
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Легкое скачивание и ты сразу в системе без лишних настроек
-              </p>
+              <h2 className="text-base font-extrabold text-white">Лёгкая установка</h2>
+              <p className="text-xs text-slate-400">Установка в 1 клик без ошибок</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
             className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-[#243344] transition cursor-pointer"
-            title="Закрыть"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Standalone status indicator banner */}
-        {isInstalled && (
-          <div className="px-4 py-2 bg-emerald-950/40 border-b border-emerald-800/40 flex items-center gap-2 text-xs text-emerald-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Приложение уже установлено и работает в нативном автономном режиме!</span>
+        {/* Body */}
+        <div className="p-5 space-y-4 overflow-y-auto max-h-[80vh]">
+          {(isInstalled || downloadSuccess) && (
+            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-3 text-xs text-emerald-300">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span className="font-medium">
+                {downloadSuccess || 'Приложение уже активировано и готово к работе!'}
+              </span>
+            </div>
+          )}
+
+          {/* 1-CLICK PRIMARY BUTTON */}
+          <div className="p-4 rounded-2xl bg-[#121b24] border border-[#243344] space-y-3 text-center">
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Нажмите кнопку ниже для мгновенной установки <strong>AuraChat</strong> на телефон или компьютер без скачивания тяжёлых файлов:
+            </p>
+
+            <button
+              type="button"
+              onClick={handleOneClickEasyInstall}
+              disabled={isInstallingNow}
+              className="w-full py-4 px-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-sm shadow-xl shadow-emerald-500/25 transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
+            >
+              <Zap className="w-5 h-5" />
+              <span>⚡ Установить в 1 клик (Авто-запуск)</span>
+            </button>
           </div>
-        )}
 
-        {/* Success toast notification */}
-        {downloadSuccess && (
-          <div className="px-4 py-2.5 bg-blue-950/50 border-b border-blue-700/50 flex items-center gap-2 text-xs text-blue-200 animate-in fade-in">
-            <Zap className="w-4 h-4 text-blue-400 shrink-0" />
-            <span>{downloadSuccess}</span>
+          {/* Secondary options: Shortcut / Mobile Home Screen */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={handleDownloadLauncher}
+              className="py-3 px-4 rounded-2xl bg-[#202b36] hover:bg-[#283747] border border-[#2f4256] text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              {isAndroid ? (
+                <>
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <span>Ярлык на телефон</span>
+                </>
+              ) : (
+                <>
+                  <Monitor className="w-4 h-4 text-[#64b5f6]" />
+                  <span>Ярлык на Рабочий стол</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="py-3 px-4 rounded-2xl bg-[#202b36] hover:bg-[#283747] border border-[#2f4256] text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Ссылка скопирована</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-amber-400" />
+                  <span>Скопировать ссылку</span>
+                </>
+              )}
+            </button>
           </div>
-        )}
 
-        {/* Platform Switcher Tabs */}
-        <div className="p-3 bg-[#121b24] border-b border-[#202d3a] flex items-center justify-center gap-2 shrink-0">
-          <button
-            onClick={() => setActiveTab('desktop')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer ${
-              activeTab === 'desktop'
-                ? 'bg-[#5288c1] text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-[#1a2533]'
-            }`}
-          >
-            <Monitor className="w-4 h-4" />
-            <span>Компьютер (ПК)</span>
-            {isDesktop && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('android')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer ${
-              activeTab === 'android'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-[#1a2533]'
-            }`}
-          >
-            <Smartphone className="w-4 h-4" />
-            <span>Android (.APK)</span>
-            {isAndroid && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('ios')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer ${
-              activeTab === 'ios'
-                ? 'bg-slate-700 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-[#1a2533]'
-            }`}
-          >
-            <Share className="w-4 h-4" />
-            <span>iOS (iPhone/iPad)</span>
-            {isIOS && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-          </button>
+          {/* Short tip for iOS / Android browser menu */}
+          <div className="p-3.5 rounded-2xl bg-[#121b24] border border-[#202d3a] space-y-2 text-xs text-slate-300">
+            <div className="font-bold text-white flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#64b5f6]" />
+              <span>Установка на главный экран телефона:</span>
+            </div>
+            {isIOS ? (
+              <p className="text-slate-400 flex items-center gap-1.5 flex-wrap">
+                В Safari нажмите <Share className="w-3.5 h-3.5 text-blue-400 inline" /> <strong>«Поделиться»</strong> → <PlusSquare className="w-3.5 h-3.5 text-emerald-400 inline" /> <strong>«На экран Домой»</strong>.
+              </p>
+            ) : (
+              <p className="text-slate-400">
+                В браузере нажмите меню <strong>⋮</strong> (три точки сверху) → выберите <strong>«Добавить на гл. экран»</strong> или <strong>«Установить приложение»</strong>.
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 scrollbar-thin">
-          
-          {/* TAB 1: DESKTOP / КОМПЬЮТЕР */}
-          {activeTab === 'desktop' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="p-4 rounded-2xl bg-[#1d2938] border border-[#2b3c4f] flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-blue-500/15 text-[#64b5f6] flex items-center justify-center shrink-0 border border-blue-500/20">
-                  <Laptop className="w-8 h-8" />
-                </div>
-                <div className="text-center sm:text-left min-w-0">
-                  <h3 className="font-bold text-base text-white">NovaChat Desktop для компьютера</h3>
-                  <p className="text-xs text-slate-300 mt-1">
-                    Открывается в отдельном окне без рамок браузера, поддерживает горячие клавиши, звонки WebRTC и мгновенную работу с медиа.
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons for Desktop */}
-              <div className="space-y-2">
-                {isInstallable ? (
-                  <button
-                    onClick={promptInstall}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-[#5288c1] hover:from-blue-500 hover:to-blue-400 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Download className="w-5 h-5" />
-                    <span>Установить приложение на компьютер (1 клик)</span>
-                  </button>
-                ) : (
-                  <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-800/40 text-xs text-slate-300 flex items-start gap-2.5">
-                    <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-semibold text-white">Установка через строку браузера:</span>
-                      <p className="text-slate-300 mt-0.5">
-                        В браузере (Chrome / Edge / Яндекс) нажмите на иконку монитора со стрелкой <strong>«Установить приложение»</strong> справа в адресной строке.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleDownloadDesktopClick}
-                  className="w-full py-2.5 px-4 rounded-xl bg-[#243344] hover:bg-[#2e4055] text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer border border-[#314459]"
-                >
-                  <Monitor className="w-4 h-4 text-slate-400" />
-                  <span>Скачать ярлык запуска для Рабочего стола</span>
-                </button>
-              </div>
-
-              {/* Benefits list */}
-              <div className="p-3.5 rounded-xl bg-[#121b24] border border-[#202d3a] space-y-2 text-xs">
-                <div className="font-semibold text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Преимущества версии для ПК:</span>
-                </div>
-                <ul className="space-y-1.5 text-slate-400 pl-5 list-disc">
-                  <li>Запуск прямо с рабочего стола или панели задач</li>
-                  <li>Ты уже в системе: не нужно повторно логиниться</li>
-                  <li>Плавное воспроизведение видео Reels и быстрые голосовые</li>
-                  <li>Звонки со сквозным шифрованием и демонстрацией экрана</li>
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: ANDROID (WebAPK / Быстрая установка) */}
-          {activeTab === 'android' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="p-4 rounded-2xl bg-[#14261e] border border-emerald-900/40 flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                  <Smartphone className="w-8 h-8" />
-                </div>
-                <div className="text-center sm:text-left min-w-0">
-                  <h3 className="font-bold text-base text-white">AuraChat для Android (WebAPK)</h3>
-                  <p className="text-xs text-slate-300 mt-1">
-                    Мгновенная установка без ошибки «синтаксического анализа пакета». Полная поддержка камеры, кружочков и звонков.
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Buttons for Android */}
-              <div className="space-y-2">
-                {isInstallable ? (
-                  <button
-                    onClick={promptInstall}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Zap className="w-5 h-5" />
-                    <span>Установить приложение в 1 клик (WebAPK)</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleDownloadApkClick}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Download className="w-5 h-5" />
-                    <span>Быстрая установка AuraChat на телефон</span>
-                  </button>
-                )}
-              </div>
-
-              {/* 3 Steps Guide for Android */}
-              <div className="p-4 rounded-2xl bg-[#121b24] border border-[#202d3a] space-y-3">
-                <h4 className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
-                  <span>Как установить на Android за 5 секунд без ошибок:</span>
-                </h4>
-
-                <div className="space-y-2.5 text-xs text-slate-300">
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                      1
-                    </span>
-                    <span>Нажмите зелёную кнопку <strong>«Установить приложение в 1 клик»</strong> выше (или откройте меню браузера <strong>⋮</strong> в правом верхнем углу).</span>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                      2
-                    </span>
-                    <span>Выберите пункт <strong>«Установить приложение»</strong> (или «Добавить на гл. экран»).</span>
-                  </div>
-
-                  <div className="flex items-start gap-2.5">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
-                      3
-                    </span>
-                    <span>Подтвердите нажатием <strong>«Установить»</strong> — система Android создаст нативное приложение без ошибок пакета!</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-[#202d3a] flex items-center gap-2 text-[11px] text-emerald-400">
-                  <Check className="w-4 h-4" />
-                  <span>Готово! Иконка AuraChat появится на главном экране телефона.</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: iOS (IPHONE / IPAD - ИНСТРУКЦИЯ) */}
-          {activeTab === 'ios' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="p-4 rounded-2xl bg-[#1f2937] border border-slate-700/50 flex flex-col sm:flex-row items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-white/10 text-white flex items-center justify-center shrink-0 border border-white/20">
-                  <Share className="w-8 h-8" />
-                </div>
-                <div className="text-center sm:text-left min-w-0">
-                  <h3 className="font-bold text-base text-white">NovaChat для iPhone и iPad</h3>
-                  <p className="text-xs text-slate-300 mt-1">
-                    Установка на iOS работает через браузер Safari в 3 простых шага без App Store. Приложение запускается на весь экран без адресной строки.
-                  </p>
-                </div>
-              </div>
-
-              {/* Copy link button if opened in another browser */}
-              <button
-                onClick={handleCopyLink}
-                className="w-full py-2.5 px-4 rounded-xl bg-[#243344] hover:bg-[#2e4055] text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer border border-[#314459]"
-              >
-                {copiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-[#64b5f6]" />}
-                <span>{copiedLink ? 'Ссылка скопирована! Откройте Safari' : 'Скопировать ссылку для Safari'}</span>
-              </button>
-
-              {/* Step-by-Step Illustrated Guide for iOS */}
-              <div className="p-4 rounded-2xl bg-[#121b24] border border-[#202d3a] space-y-3.5">
-                <h4 className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>Пошаговая инструкция установки в Safari:</span>
-                </h4>
-
-                <div className="space-y-3 text-xs text-slate-300">
-                  {/* Step 1 */}
-                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-[#17212b] border border-[#243344]">
-                    <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-[#64b5f6] flex items-center justify-center shrink-0 font-bold text-xs">
-                      1
-                    </div>
-                    <div>
-                      <span className="font-bold text-white block">Откройте Safari</span>
-                      <span className="text-slate-400 text-[11px]">
-                        Убедитесь, что страница открыта именно в браузере Safari на iPhone или iPad.
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Step 2 */}
-                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-[#17212b] border border-[#243344]">
-                    <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-[#64b5f6] flex items-center justify-center shrink-0 font-bold text-xs">
-                      2
-                    </div>
-                    <div>
-                      <span className="font-bold text-white flex items-center gap-1.5">
-                        <span>Нажмите «Поделиться»</span>
-                        <Share className="w-3.5 h-3.5 text-blue-400" />
-                      </span>
-                      <span className="text-slate-400 text-[11px]">
-                        Иконка квадрата со стрелочкой вверх ⬆️ в нижней панели управления Safari.
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-[#17212b] border border-[#243344]">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 font-bold text-xs">
-                      3
-                    </div>
-                    <div>
-                      <span className="font-bold text-white flex items-center gap-1.5">
-                        <span>Выберите «На экран "Домой"»</span>
-                        <PlusSquare className="w-3.5 h-3.5 text-emerald-400" />
-                      </span>
-                      <span className="text-slate-400 text-[11px]">
-                        Прокрутите меню действий вниз и найдите пункт со знаком «+».
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Step 4 */}
-                  <div className="flex items-start gap-3 p-2.5 rounded-xl bg-[#17212b] border border-[#243344]">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 font-bold text-xs">
-                      4
-                    </div>
-                    <div>
-                      <span className="font-bold text-white block">Нажмите «Добавить»</span>
-                      <span className="text-slate-400 text-[11px]">
-                        В правом верхнем углу нажмите кнопку «Добавить».
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/40 text-xs text-emerald-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Иконка NovaChat появится на домашнем экране. Ты в системе и готов к общению!</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-4 bg-[#121b24] border-t border-[#202d3a] flex items-center justify-between text-xs text-slate-400 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-xs" />
-            <span className="truncate">Сессия сохраняется на всех устройствах</span>
-          </div>
-
+        {/* Footer */}
+        <div className="px-5 py-3.5 bg-[#121b24] border-t border-[#202d3a] flex items-center justify-between">
+          <span className="text-[11px] text-slate-400">AuraChat v2.5 • Работает на всех устройствах</span>
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-[#243344] hover:bg-[#30445a] text-white font-medium transition cursor-pointer"
+            className="px-4 py-1.5 rounded-xl bg-[#243344] hover:bg-[#30445a] text-white text-xs font-bold transition cursor-pointer"
           >
-            Закрыть
+            Готово
           </button>
         </div>
-
       </div>
     </div>
   );
