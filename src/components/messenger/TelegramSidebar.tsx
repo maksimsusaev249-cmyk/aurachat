@@ -202,13 +202,8 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
   // Matched users in global search
   const matchedGlobalUsers = isSearching
     ? globalUsersDirectory.filter((u) => {
-        const isGenericUserQuery =
-          'пользователь'.includes(cleanQuery) ||
-          'пользователи'.includes(cleanQuery) ||
-          'люди'.includes(cleanQuery) ||
-          'контакт'.includes(cleanQuery) ||
-          'контакты'.includes(cleanQuery) ||
-          'юзер'.includes(cleanQuery);
+        const genericKeywords = ['пользователь', 'пользователи', 'люди', 'контакт', 'контакты', 'юзер', 'юзеры'];
+        const isGenericUserQuery = genericKeywords.includes(cleanQuery);
 
         return (
           isGenericUserQuery ||

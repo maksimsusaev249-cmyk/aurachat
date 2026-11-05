@@ -204,16 +204,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   // Filtered Users / Profiles
   const matchedUsers = useMemo(() => {
     if (!cleanQuery) return allProfiles;
+    const genericKeywords = ['люди', 'профиль', 'профили', 'пользователь', 'пользователи', 'юзер', 'юзеры'];
+    const isGenericUserQuery = genericKeywords.includes(cleanQuery);
+
     return allProfiles.filter(
       (u) =>
+        isGenericUserQuery ||
         u.name.toLowerCase().includes(cleanQuery) ||
         u.username.toLowerCase().includes(cleanQuery) ||
         (u.bio && u.bio.toLowerCase().includes(cleanQuery)) ||
         (u.phone && u.phone.toLowerCase().includes(cleanQuery)) ||
-        (u.email && u.email.toLowerCase().includes(cleanQuery)) ||
-        'люди'.includes(cleanQuery) ||
-        'профиль'.includes(cleanQuery) ||
-        'пользователь'.includes(cleanQuery)
+        (u.email && u.email.toLowerCase().includes(cleanQuery))
     );
   }, [allProfiles, cleanQuery]);
 
