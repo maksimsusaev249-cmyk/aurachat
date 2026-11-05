@@ -352,8 +352,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // All available profiles for the "Профили" screen
+  // If the user has no saved accounts yet (fresh user), do NOT inject a ghost profile!
   const allProfiles: User[] = [...savedAccounts];
-  if (lastUser && !allProfiles.some((a) => a.id === lastUser.id)) {
+  if (lastUser && savedAccounts.length > 0 && !allProfiles.some((a) => a.id === lastUser.id)) {
     allProfiles.unshift(lastUser);
   }
 
@@ -431,7 +432,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <UserIcon className="w-4 h-4 text-[#64b5f6]" />
                   <span>Профили</span>
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-[#243344] text-xs text-[#64b5f6]">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  allProfiles.length > 0 ? 'bg-[#243344] text-[#64b5f6]' : 'bg-[#1c2734] text-slate-500'
+                }`}>
                   {allProfiles.length}
                 </span>
               </button>
@@ -511,14 +514,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="text-center space-y-1">
               <h2 className="text-xl font-extrabold text-white">Профили</h2>
               <p className="text-xs text-slate-400">
-                Выберите аккаунт для входа (если подключен ПИН-код, потребуется его ввод)
+                {allProfiles.length === 0
+                  ? 'На этом устройстве ещё нет сохранённых профилей'
+                  : 'Выберите аккаунт для входа (если подключен ПИН-код, потребуется его ввод)'}
               </p>
             </div>
 
             <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
               {allProfiles.length === 0 ? (
-                <div className="p-8 rounded-3xl bg-[#17212b] border border-[#243344] text-center text-slate-400 text-xs">
-                  Сохранённых профилей пока нет
+                <div className="p-8 rounded-3xl bg-[#17212b] border border-[#243344] text-center space-y-4">
+                  <div className="w-14 h-14 rounded-full bg-[#0e1621] border border-[#30445a] mx-auto flex items-center justify-center text-slate-400">
+                    <UserIcon className="w-7 h-7 text-slate-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="font-bold text-white text-base">Нет созданных профилей</div>
+                    <div className="text-xs text-slate-400 max-w-xs mx-auto">
+                      Вы ещё не создали ни одного аккаунта. Зарегистрируйтесь, чтобы создать свой первый профиль.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playReactionSound();
+                      setFormError('');
+                      setRegName('');
+                      setRegUsername('');
+                      setRegContactValue('');
+                      setRegOtpSent(false);
+                      setRegOtpCode('');
+                      setRegPassword('');
+                      setRegPin('');
+                      setView('reg_name');
+                    }}
+                    className="w-full py-3.5 px-5 rounded-full bg-gradient-to-r from-[#0077FF] to-[#0055cc] hover:from-[#0066ee] hover:to-[#0044bb] text-white font-bold text-sm tracking-wide transition shadow-lg shadow-blue-500/20 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>+ Создать аккаунт (Регистрация)</span>
+                  </button>
                 </div>
               ) : (
                 allProfiles.map((acc) => (

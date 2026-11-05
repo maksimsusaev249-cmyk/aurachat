@@ -26,7 +26,10 @@ import {
   Maximize2,
   Minimize2,
   Zap,
-  ZapOff
+  ZapOff,
+  Grid,
+  Sun,
+  Timer
 } from 'lucide-react';
 import { 
   playSentSound, 
@@ -151,19 +154,35 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const [speed, setSpeed] = useState<SpeedOption>('1x');
   const [quality, setQuality] = useState<VideoQuality>('1080p FHD');
   const [selectedFilter, setSelectedFilter] = useState(filters[0]);
-  const [timerDelay] = useState<0 | 3 | 10>(0);
+  const [timerDelay, setTimerDelay] = useState<0 | 3 | 10>(0);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [isFlipping, setIsFlipping] = useState(false);
 
-  // Zoom & Scale control: min scale is ALWAYS 1.0 so preview fills 100% and frame NEVER runs away
-  const [zoomLevel, setZoomLevel] = useState<0.5 | 1 | 2>(0.5);
+  // Smartphone Framing & Aspect Ratio: '3:4' (Standard Phone Photo) | '16:9' | '1:1' | 'full'
+  const [cameraAspect, setCameraAspect] = useState<'3:4' | '16:9' | '1:1' | 'full'>(
+    initialMode === 'reel' || initialMode === 'story' ? 'full' : '3:4'
+  );
+  const [showGrid, setShowGrid] = useState(false);
+  const [flashMode, setFlashMode] = useState<'off' | 'on' | 'auto'>('off');
+  const [isRetinaFlash, setIsRetinaFlash] = useState(false);
 
-  // 0.5 = scale 1.0 (100% full bleed, widest view, frame NEVER shrinks or runs away)
-  // 1x = scale 1.35 (standard portrait zoom)
-  // 2x = scale 2.0 (telephoto 2x zoom)
+  // Zoom Levels: 0.5x (ultra-wide), 1x (standard 100%), 2x (telephoto 2x), 3x (3x digital)
+  const [zoomLevel, setZoomLevel] = useState<0.5 | 1 | 2 | 3>(1);
+
+  // Scale guarantees video always fills the frame (never shrinks below 1.0, so frame never runs away)
   const getCameraScale = () => {
-    if (zoomLevel === 0.5) return 1.0;
-    if (zoomLevel === 1) return 1.35;
-    return 2.0;
+    switch (zoomLevel) {
+      case 0.5:
+        return 1.0; // Widest possible view, 100% full bleed
+      case 1:
+        return 1.0; // Standard 1.0x native view (crisp & natural, NO big zoom!)
+      case 2:
+        return 1.8; // 2x magnification
+      case 3:
+        return 2.5; // 3x magnification
+      default:
+        return 1.0;
+    }
   };
 
   useEffect(() => {
@@ -172,7 +191,16 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
         const track = streamRef.current.getVideoTracks()[0];
         const capabilities = (track as any)?.getCapabilities?.();
         if (capabilities && 'zoom' in capabilities) {
-          const targetZoom = zoomLevel === 0.5 ? 1 : zoomLevel === 1 ? 1.5 : 2.5;
+          const min = capabilities.zoom.min || 1;
+          const max = capabilities.zoom.max || 5;
+          const targetZoom =
+            zoomLevel === 0.5
+              ? min
+              : zoomLevel === 1
+              ? min
+              : zoomLevel === 2
+              ? Math.min(min + (max - min) * 0.4, max)
+              : max;
           (track as any).applyConstraints?.({
             advanced: [{ zoom: targetZoom }]
           }).catch(() => {});
@@ -187,15 +215,48 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isFlashing, setIsFlashing] = useState(false);
-  const [isFlashOn, setIsFlashOn] = useState(false);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const focusTimeoutRef = useRef<any>(null);
+  const lastTapRef = useRef<number>(0);
+
+  // QuickTake Shutter Pointer Refs (tap = photo, hold = quick video)
+  const shutterPressTimeoutRef = useRef<any>(null);
+  const isQuickTakeRef = useRef(false);
+
+  const handleCycleAspect = () => {
+    playReactionSound();
+    setCameraAspect((prev) => {
+      if (prev === '3:4') return '16:9';
+      if (prev === '16:9') return '1:1';
+      if (prev === '1:1') return 'full';
+      return '3:4';
+    });
+  };
+
+  const handleCycleFlash = () => {
+    playReactionSound();
+    setFlashMode((prev) => (prev === 'off' ? 'on' : prev === 'on' ? 'auto' : 'off'));
+  };
+
+  const handleCycleTimer = () => {
+    playReactionSound();
+    setTimerDelay((prev) => (prev === 0 ? 3 : prev === 3 ? 10 : 0));
+  };
 
   const handleViewfinderTap = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('label') || target.closest('input')) {
       return;
     }
+    const now = Date.now();
+    if (now - lastTapRef.current < 320) {
+      // Double tap to flip front/rear camera (standard mobile gesture like Telegram / Instagram!)
+      handleFlipCamera();
+      lastTapRef.current = 0;
+      return;
+    }
+    lastTapRef.current = now;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -206,7 +267,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
     }
     focusTimeoutRef.current = setTimeout(() => {
       setFocusPoint(null);
-    }, 1500);
+    }, 1800);
   };
 
   // Captured media result
@@ -227,6 +288,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
     if (isOpen) {
       setStep('camera');
       setMode(initialMode);
+      setCameraAspect(initialMode === 'reel' || initialMode === 'story' ? 'full' : '3:4');
       setIsRecording(false);
       setRecordSeconds(0);
       setCountdown(null);
@@ -268,20 +330,44 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      let stream: MediaStream;
+      let stream: MediaStream | null = null;
+      const needAudio = mode === 'reel';
+
+      // 3-Tier ultra resilient camera start:
+      // Tier 1: Try ideal resolution with requested facingMode
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
-          audio: true
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: needAudio
         });
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // Tier 2: Try without audio (in case microphone is in use or blocked)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facingMode } },
+            audio: false
+          });
+        } catch {
+          // Tier 3: General video fallback
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          } catch {}
+        }
       }
-      streamRef.current = stream;
-      setIsCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+
+      if (stream) {
+        streamRef.current = stream;
+        setIsCameraActive(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      } else {
+        setIsCameraActive(false);
       }
     } catch {
       setIsCameraActive(false);
@@ -301,7 +387,12 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   };
 
   const handleFlipCamera = () => {
+    setIsFlipping(true);
+    playReactionSound();
     setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+    setTimeout(() => {
+      setIsFlipping(false);
+    }, 350);
   };
 
   // Skip button handler ("Там просто будет кнопка пропустить. Там просто будет написать сообщение как пост.")
@@ -338,8 +429,18 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
   const executeShutter = () => {
     if (mode === 'post' || mode === 'story') {
       playSentSound();
-      setIsFlashing(true);
-      setTimeout(() => setIsFlashing(false), 140);
+      if (flashMode !== 'off') {
+        if (facingMode === 'user') {
+          setIsRetinaFlash(true);
+          setTimeout(() => setIsRetinaFlash(false), 240);
+        } else {
+          setIsFlashing(true);
+          setTimeout(() => setIsFlashing(false), 140);
+        }
+      } else {
+        setIsFlashing(true);
+        setTimeout(() => setIsFlashing(false), 140);
+      }
       setCapturedMediaType('image');
       const liveFrame = isCameraActive
         ? captureVideoFrameToDataUrl(videoRef.current, facingMode === 'user')
@@ -375,6 +476,29 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
       } else {
         handleStopRecording();
       }
+    }
+  };
+
+  const handleShutterPointerDown = () => {
+    if (mode === 'post' || mode === 'story') {
+      shutterPressTimeoutRef.current = setTimeout(() => {
+        // QuickTake: long press shutter in photo mode to record video like iPhone/Telegram
+        isQuickTakeRef.current = true;
+        setMode('reel');
+        playReactionSound();
+        executeShutter();
+      }, 450);
+    }
+  };
+
+  const handleShutterPointerUp = () => {
+    if (shutterPressTimeoutRef.current) {
+      clearTimeout(shutterPressTimeoutRef.current);
+      shutterPressTimeoutRef.current = null;
+    }
+    if (isQuickTakeRef.current) {
+      isQuickTakeRef.current = false;
+      handleStopRecording();
     }
   };
 
@@ -644,17 +768,99 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
       <div className="relative w-full max-w-sm sm:max-w-md md:max-w-lg h-[92vh] max-h-[860px] bg-black rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between border border-[#243344]">
         
         {/* =================================================================== */}
-        {/* STEP 1: CHOOSE FROM DEVICE, CAMERA OR SKIP DIRECTLY TO TEXT POST    */}
+        {/* STEP 1: SMARTPHONE CAMERA INTERFACE (ASPECT RATIO, CONTROLS, ZOOM) */}
         {/* =================================================================== */}
         {step === 'camera' && (
-          <>
-            {/* Viewfinder Media / Stream */}
+          <div className="w-full h-full flex flex-col justify-between bg-black relative overflow-hidden">
+            {/* Top Bar: Smartphone Camera Header Controls */}
+            <div className="relative z-30 px-3.5 py-2.5 flex items-center justify-between text-white bg-black/80 backdrop-blur-md shrink-0 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition active:scale-90"
+                  title="Закрыть"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCycleFlash}
+                  className={`p-2 rounded-full transition cursor-pointer active:scale-90 ${
+                    flashMode !== 'off'
+                      ? 'bg-[#f1c40f] text-black font-bold shadow-lg shadow-yellow-500/30'
+                      : 'bg-white/10 hover:bg-white/20 text-white/80'
+                  }`}
+                  title={`Вспышка: ${flashMode.toUpperCase()}`}
+                >
+                  {flashMode !== 'off' ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCycleAspect}
+                  className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-[11px] font-bold font-mono tracking-wider cursor-pointer transition active:scale-95"
+                  title="Формат кадра (3:4 / 16:9 / 1:1 / FULL)"
+                >
+                  {cameraAspect.toUpperCase()}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playReactionSound();
+                    setShowGrid((prev) => !prev);
+                  }}
+                  className={`p-2 rounded-full transition cursor-pointer active:scale-90 ${
+                    showGrid ? 'bg-white/30 text-white' : 'bg-white/10 hover:bg-white/20 text-white/70'
+                  }`}
+                  title="Сетка 3х3 (Правило третей)"
+                >
+                  <Grid className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCycleTimer}
+                  className={`px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 transition cursor-pointer active:scale-95 ${
+                    timerDelay > 0 ? 'bg-amber-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white/70'
+                  }`}
+                  title="Таймер съемки"
+                >
+                  <Timer className="w-3.5 h-3.5" />
+                  <span>{timerDelay > 0 ? `${timerDelay}s` : 'Выкл'}</span>
+                </button>
+
+                {!isRecording && (
+                  <button
+                    type="button"
+                    onClick={handleSkipToComposer}
+                    className="px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shadow-lg cursor-pointer transition active:scale-95"
+                    title="Пропустить камеру и написать пост"
+                  >
+                    <span>Пропустить</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Center: Camera Viewfinder with Native Framing */}
             <div
               onClick={handleViewfinderTap}
-              className="absolute inset-0 z-0 bg-[#0e1621] flex items-center justify-center overflow-hidden cursor-crosshair select-none"
+              className="flex-1 w-full bg-black flex items-center justify-center relative overflow-hidden cursor-crosshair select-none"
             >
               {isCameraActive ? (
-                <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
+                <div
+                  className={`relative overflow-hidden bg-black transition-all duration-300 ease-out flex items-center justify-center ${
+                    cameraAspect === '3:4'
+                      ? 'w-full max-w-full aspect-[3/4] rounded-2xl border border-white/10 shadow-2xl'
+                      : cameraAspect === '1:1'
+                      ? 'w-full max-w-[340px] aspect-square rounded-2xl border border-white/10 shadow-2xl'
+                      : 'w-full h-full'
+                  }`}
+                >
                   <video
                     ref={videoRef}
                     autoPlay
@@ -662,14 +868,36 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                     muted
                     style={{
                       filter: selectedFilter.css,
-                      transform: `scale(${getCameraScale()}) ${facingMode === 'user' ? 'scaleX(-1)' : ''}`,
+                      transform: `scale(${getCameraScale()}) ${facingMode === 'user' ? 'scaleX(-1)' : ''} ${
+                        isFlipping ? 'rotateY(180deg)' : 'rotateY(0deg)'
+                      }`,
                       transformOrigin: 'center center'
                     }}
                     className="w-full h-full object-cover transition-transform duration-300 ease-out"
                   />
-                  <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/60 via-transparent to-black/30" />
 
-                  {/* Tap-to-Focus Yellow Box (as seen in Video 1 at 0:01) */}
+                  {/* Grid Lines 3x3 Overlay */}
+                  {showGrid && (
+                    <div className="absolute inset-0 pointer-events-none z-10 grid grid-cols-3 grid-rows-3">
+                      <div className="border-r border-b border-white/25" />
+                      <div className="border-r border-b border-white/25" />
+                      <div className="border-b border-white/25" />
+                      <div className="border-r border-b border-white/25" />
+                      <div className="border-r border-b border-white/25" />
+                      <div className="border-b border-white/25" />
+                      <div className="border-r border-b border-white/25" />
+                      <div className="border-r border-b border-white/25" />
+                      <div />
+                      {/* Center horizon level indicator */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center gap-1 opacity-75">
+                        <div className="w-5 h-0.5 bg-[#f1c40f]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#f1c40f]" />
+                        <div className="w-5 h-0.5 bg-[#f1c40f]" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tap-to-Focus Yellow Reticle with Exposure Sun Icon */}
                   {focusPoint && (
                     <div
                       className="absolute pointer-events-none z-30 transition-transform duration-200 animate-in zoom-in-75"
@@ -686,15 +914,30 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                         <div className="absolute -left-1 h-2.5 w-0.5 bg-[#f1c40f]" />
                         <div className="absolute -right-1 h-2.5 w-0.5 bg-[#f1c40f]" />
                       </div>
+                      <div className="absolute -right-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 text-[#f1c40f]">
+                        <Sun className="w-3.5 h-3.5" />
+                        <div className="w-0.5 h-5 bg-[#f1c40f]/80 rounded-full" />
+                      </div>
                     </div>
                   )}
 
-                  {/* Flash Overlay when taking photo */}
+                  {/* Shutter Blink */}
                   {isFlashing && (
                     <div className="absolute inset-0 bg-white z-40 animate-out fade-out duration-150 pointer-events-none" />
                   )}
+
+                  {/* Selfie Retina Screen Flash */}
+                  {isRetinaFlash && (
+                    <div className="absolute inset-0 bg-[#fff5ea] z-40 animate-out fade-out duration-300 pointer-events-none border-8 border-amber-200" />
+                  )}
+
+                  {/* Double tap hint */}
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none z-20 px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-xs text-[10px] text-white/60 tracking-wider">
+                    2x тап — сменить камеру
+                  </div>
                 </div>
               ) : (
+                /* Fallback / Camera Off UI with Device Upload & Skip */
                 <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-[#131c26] to-[#0e1621] p-6 text-center">
                   <div className="w-18 h-18 rounded-full bg-[#1e2a38] border border-[#283748] flex items-center justify-center mb-3">
                     {mode === 'reel' ? (
@@ -714,7 +957,6 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                     Выберите фото/видео с устройства, включите камеру или нажмите <strong>«Пропустить»</strong>, чтобы сразу написать текстовый пост со ссылкой!
                   </p>
 
-                  {/* Action Buttons right in the center for convenience */}
                   <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full max-w-xs mb-4">
                     <label className="w-full py-2.5 px-4 rounded-2xl bg-[#5288c1] hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-lg transition">
                       <Upload className="w-4 h-4" />
@@ -738,14 +980,13 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                     </button>
                   </div>
 
-                  {/* Prominent SKIP Button */}
                   <button
                     type="button"
                     onClick={handleSkipToComposer}
                     className="w-full max-w-xs py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xl transition"
                   >
                     <SkipForward className="w-4 h-4" />
-                    <span>Пропустить → Написать пост (без фото или добавить потом)</span>
+                    <span>Пропустить → Написать пост</span>
                   </button>
                 </div>
               )}
@@ -753,85 +994,39 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
               {/* Countdown Overlay */}
               {countdown !== null && (
                 <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30">
-                  <span className="text-7xl font-extrabold text-white animate-ping">
+                  <span className="text-7xl font-extrabold text-[#f1c40f] animate-ping">
                     {countdown}
                   </span>
                 </div>
               )}
+
+              {/* Active Recording Pill in Viewfinder */}
+              {isRecording && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600/90 text-white text-xs font-mono font-bold shadow-xl animate-pulse">
+                  <span className="w-2.5 h-2.5 rounded-full bg-white" />
+                  <span>REC 00:{recordSeconds < 10 ? '0' + recordSeconds : recordSeconds}</span>
+                </div>
+              )}
             </div>
 
-            {/* Top Bar Controls */}
-            <div className="relative z-20 p-4 flex items-center justify-between text-white bg-gradient-to-b from-black/80 to-transparent">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="p-2 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/70 cursor-pointer"
-                  title="Закрыть"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-                <span className="text-[11px] font-mono font-medium text-white/70 px-2 py-0.5 rounded-md bg-black/30 backdrop-blur-sm">
-                  EV 0.0
-                </span>
-              </div>
-
-              {/* Flash toggle */}
-              <button
-                type="button"
-                onClick={() => {
-                  playReactionSound();
-                  setIsFlashOn((prev) => !prev);
-                }}
-                className={`p-2 rounded-full backdrop-blur-md border transition cursor-pointer ${
-                  isFlashOn
-                    ? 'bg-[#f1c40f]/20 border-[#f1c40f] text-[#f1c40f]'
-                    : 'bg-black/40 border-white/20 text-white/70 hover:text-white'
-                }`}
-                title={isFlashOn ? 'Вспышка включена' : 'Вспышка выключена'}
-              >
-                {isFlashOn ? <Zap className="w-4 h-4 fill-[#f1c40f]" /> : <ZapOff className="w-4 h-4" />}
-              </button>
-
-              {/* Recording Timer Indicator or Skip */}
-              <div className="flex items-center gap-2">
-                {isRecording ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600/90 text-white text-xs font-mono font-bold animate-pulse">
-                    <span className="w-2.5 h-2.5 rounded-full bg-white" />
-                    <span>REC 00:{recordSeconds < 10 ? '0' + recordSeconds : recordSeconds}</span>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSkipToComposer}
-                    className="px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shadow-lg cursor-pointer transition"
-                    title="Пропустить камеру и перейти к написанию поста"
-                  >
-                    <span>Пропустить</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom Controls Area */}
-            <div className="relative z-20 p-4 pb-6 flex flex-col items-center bg-gradient-to-t from-black via-black/80 to-transparent">
-              {/* ZOOM CONTROLS: Pill [ 0.5 ] [ 1x ] [ 2 ] on both cameras + Wide selfie toggle */}
+            {/* Bottom Controls: Zoom Pill, Modes Carousel, Shutter & Flip */}
+            <div className="relative z-30 px-4 pt-2 pb-5 flex flex-col items-center bg-black shrink-0 border-t border-white/5">
+              {/* Zoom Controls Pill: 0.5 | 1x | 2 | 3 */}
               {isCameraActive && (
                 <div className="flex items-center gap-2 mb-2 z-20">
-                  <div className="flex items-center bg-black/60 backdrop-blur-md px-2 py-1 rounded-full border border-white/20 shadow-xl">
+                  <div className="flex items-center bg-white/10 backdrop-blur-md px-2 py-1 rounded-full border border-white/15 shadow-xl">
                     <button
                       type="button"
                       onClick={() => {
                         playReactionSound();
                         setZoomLevel(0.5);
                       }}
-                      className={`px-3 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
                         zoomLevel === 0.5
-                          ? 'text-[#f1c40f] font-extrabold scale-110 drop-shadow'
+                          ? 'bg-white/25 text-[#f1c40f] font-extrabold scale-105'
                           : 'text-white/80 hover:text-white'
                       }`}
-                      title="0.5x (Широкий угол, полный обзор)"
+                      title="0.5x (Широкий угол)"
                     >
                       0.5
                     </button>
@@ -841,12 +1036,12 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                         playReactionSound();
                         setZoomLevel(1);
                       }}
-                      className={`px-3 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
                         zoomLevel === 1
-                          ? 'text-[#f1c40f] font-extrabold scale-110 drop-shadow'
+                          ? 'bg-white/25 text-[#f1c40f] font-extrabold scale-105'
                           : 'text-white/80 hover:text-white'
                       }`}
-                      title="1x (Стандартный масштаб)"
+                      title="1x (Стандартный масштаб 100%)"
                     >
                       1x
                     </button>
@@ -858,48 +1053,45 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                       }}
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
                         zoomLevel === 2
-                          ? 'text-[#f1c40f] font-extrabold scale-110 drop-shadow'
+                          ? 'bg-white/25 text-[#f1c40f] font-extrabold scale-105'
                           : 'text-white/80 hover:text-white'
                       }`}
                       title="2x (Приближение)"
                     >
                       2
                     </button>
-                  </div>
-
-                  {/* Wide Selfie Dual-Arrow Toggle button if front camera */}
-                  {facingMode === 'user' && (
                     <button
                       type="button"
                       onClick={() => {
                         playReactionSound();
-                        setZoomLevel((prev) => (prev === 0.5 ? 1 : 0.5));
+                        setZoomLevel(3);
                       }}
-                      className="p-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white flex items-center justify-center cursor-pointer shadow-lg active:scale-90 hover:bg-black/80 transition"
-                      title={zoomLevel === 0.5 ? 'Обычный селфи-кадр (1x)' : 'Широкий угол селфи (0.5x)'}
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                        zoomLevel === 3
+                          ? 'bg-white/25 text-[#f1c40f] font-extrabold scale-105'
+                          : 'text-white/80 hover:text-white'
+                      }`}
+                      title="3x (Телефото)"
                     >
-                      {zoomLevel === 0.5 ? (
-                        <Minimize2 className="w-3.5 h-3.5 text-white" />
-                      ) : (
-                        <Maximize2 className="w-3.5 h-3.5 text-white" />
-                      )}
+                      3
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
 
-              {/* Mode Selector (ВИДЕО | ФОТО) matching user's video with yellow active font */}
-              <div className="flex items-center justify-center gap-8 mb-3 z-20">
+              {/* Mode Selector Carousel (ВИДЕО | ФОТО | ИСТОРИЯ) */}
+              <div className="flex items-center justify-center gap-7 mb-3 z-20">
                 <button
                   type="button"
                   onClick={() => {
                     playReactionSound();
                     setMode('reel');
+                    setCameraAspect('full');
                   }}
-                  className={`transition-all cursor-pointer font-bold tracking-wider uppercase ${
+                  className={`transition-all cursor-pointer font-bold tracking-wider uppercase text-xs ${
                     mode === 'reel'
-                      ? 'text-[#f1c40f] text-sm scale-105 drop-shadow'
-                      : 'text-white/70 hover:text-white text-xs'
+                      ? 'text-[#f1c40f] text-sm scale-110 drop-shadow-md font-extrabold'
+                      : 'text-white/60 hover:text-white'
                   }`}
                 >
                   ВИДЕО
@@ -909,19 +1101,35 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                   onClick={() => {
                     playReactionSound();
                     setMode('post');
+                    setCameraAspect('3:4');
                   }}
-                  className={`transition-all cursor-pointer font-bold tracking-wider uppercase ${
-                    mode === 'post' || mode === 'story'
-                      ? 'text-[#f1c40f] text-sm scale-105 drop-shadow'
-                      : 'text-white/70 hover:text-white text-xs'
+                  className={`transition-all cursor-pointer font-bold tracking-wider uppercase text-xs ${
+                    mode === 'post'
+                      ? 'text-[#f1c40f] text-sm scale-110 drop-shadow-md font-extrabold'
+                      : 'text-white/60 hover:text-white'
                   }`}
                 >
                   ФОТО
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playReactionSound();
+                    setMode('story');
+                    setCameraAspect('full');
+                  }}
+                  className={`transition-all cursor-pointer font-bold tracking-wider uppercase text-xs ${
+                    mode === 'story'
+                      ? 'text-[#f1c40f] text-sm scale-110 drop-shadow-md font-extrabold'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  ИСТОРИЯ
+                </button>
               </div>
 
-              {/* Shutter Bar: Gallery (left) - Big Shutter (center) - Flip Camera (right) */}
-              <div className="w-full flex items-center justify-between px-6 z-20">
+              {/* Shutter Bar: Gallery (Left) - Big Shutter with QuickTake (Center) - Flip (Right) */}
+              <div className="w-full flex items-center justify-between px-6 z-20 max-w-xs">
                 {/* Left: Gallery Thumbnail */}
                 <label
                   className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/60 bg-black/60 backdrop-blur-md flex items-center justify-center cursor-pointer shadow-lg active:scale-95 transition shrink-0"
@@ -941,11 +1149,14 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                   />
                 </label>
 
-                {/* Center: Big Shutter / Record Button */}
+                {/* Center: Big Phone Shutter Button (Tap = Photo, Hold = Video QuickTake) */}
                 <div className="relative flex items-center justify-center">
                   <button
                     type="button"
                     onClick={handleShutterClick}
+                    onPointerDown={handleShutterPointerDown}
+                    onPointerUp={handleShutterPointerUp}
+                    onPointerLeave={handleShutterPointerUp}
                     className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all cursor-pointer shadow-2xl ${
                       isRecording
                         ? 'border-rose-500 scale-105 shadow-rose-500/50'
@@ -964,21 +1175,20 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                   </button>
                 </div>
 
-                {/* Right: Flip Camera Button */}
+                {/* Right: Flip Camera Button with rotation animation */}
                 <button
                   type="button"
-                  onClick={() => {
-                    playReactionSound();
-                    handleFlipCamera();
-                  }}
-                  className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white flex items-center justify-center cursor-pointer active:rotate-180 transition-all duration-300 hover:bg-black/60 shadow-lg shrink-0"
-                  title="Переключить камеру (Фронтальная / Основная)"
+                  onClick={handleFlipCamera}
+                  className={`w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white flex items-center justify-center cursor-pointer shadow-lg shrink-0 transition-transform duration-300 ${
+                    isFlipping ? 'rotate-180 scale-90' : 'active:scale-90'
+                  }`}
+                  title="Сменить камеру (Фронтальная / Основная)"
                 >
                   <RotateCcw className="w-5 h-5 text-white" />
                 </button>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* =================================================================== */}

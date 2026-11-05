@@ -331,31 +331,35 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('profile');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [lastLoggedUser, setLastLoggedUser] = useState<User | null>(initialCurrentUser);
+  const [lastLoggedUser, setLastLoggedUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('aurachat_currentUser_v3');
+      if (saved) return JSON.parse(saved);
+      const legacy = localStorage.getItem('aurachat_currentUser');
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (parsed && parsed.id !== 'usr_me' && parsed.id !== 'u_durov' && parsed.id !== 'u_anna') {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
   const [savedAccounts, setSavedAccounts] = useState<User[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_savedAccounts');
+      const saved = localStorage.getItem('aurachat_savedAccounts_v3');
       if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
-      initialCurrentUser,
-      {
-        id: 'u_durov',
-        displayName: 'Павел Дуров',
-        username: 'durov',
-        avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=DurovAnime&backgroundColor=182533',
-        phone: '+7 (999) 777-00-01',
-        bio: 'Основатель AuraChat. Свобода общения и шифрование.'
-      },
-      {
-        id: 'u_anna',
-        displayName: 'Анна Смирнова (UX/UI)',
-        username: 'anna_tech',
-        avatarUrl: 'https://api.dicebear.com/7.x/lorelei/svg?seed=ElenaArt&backgroundColor=4c1d95',
-        phone: '+7 (999) 333-22-11',
-        bio: 'Lead UI/UX Designer at AuraChat.'
+      // Clean legacy mock accounts if present
+      const legacy = localStorage.getItem('aurachat_savedAccounts');
+      if (legacy) {
+        const parsed: User[] = JSON.parse(legacy);
+        const filtered = parsed.filter(
+          (a) => a.id !== 'u_durov' && a.id !== 'u_anna' && a.id !== 'usr_me'
+        );
+        if (filtered.length > 0) return filtered;
       }
-    ];
+    } catch (e) {}
+    return [];
   });
 
   // Helper to create pure "Избранное" (Saved Messages) chat for any user
@@ -386,26 +390,35 @@ export default function App() {
       const saved = localStorage.getItem('aurachat_userChatsMap_v2');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return {
-      usr_me: initialChats,
-      u_durov: initialChats,
-      u_anna: initialChats
-    };
+    return {};
   });
 
-  // User authentication and session state
+  // User authentication and session state: Defaults to false so first screen is Login / Registration
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_isLoggedIn');
+      const saved = localStorage.getItem('aurachat_isLoggedIn_v3');
       if (saved !== null) return JSON.parse(saved);
+      const legacy = localStorage.getItem('aurachat_isLoggedIn');
+      if (legacy !== null) {
+        const parsedLegacy = JSON.parse(legacy);
+        const savedAccs = localStorage.getItem('aurachat_savedAccounts_v3') || localStorage.getItem('aurachat_savedAccounts');
+        if (parsedLegacy && savedAccs) {
+          const parsedList: User[] = JSON.parse(savedAccs);
+          const hasRealUser = parsedList.some(
+            (a) => a.id !== 'usr_me' && a.id !== 'u_durov' && a.id !== 'u_anna'
+          );
+          if (hasRealUser) return true;
+        }
+      }
     } catch (e) {}
-    return true;
+    return false;
   });
 
   // LocalStorage persistence Effects
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_currentUser', JSON.stringify(currentUser));
+      localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(currentUser));
       if (!isFirestoreQuotaExceeded()) {
         syncAccountToCloud(currentUser);
       }
@@ -415,12 +428,14 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_savedAccounts', JSON.stringify(savedAccounts));
+      localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(savedAccounts));
     } catch (e) {}
   }, [savedAccounts]);
 
   useEffect(() => {
     try {
       localStorage.setItem('aurachat_isLoggedIn', JSON.stringify(isLoggedIn));
+      localStorage.setItem('aurachat_isLoggedIn_v3', JSON.stringify(isLoggedIn));
     } catch (e) {}
   }, [isLoggedIn]);
 
@@ -2655,7 +2670,7 @@ export default function App() {
       <AuthModal
         isOpen={isAuthModalOpen || !isLoggedIn}
         isLoggedIn={isLoggedIn}
-        lastUser={lastLoggedUser || currentUser}
+        lastUser={lastLoggedUser}
         savedAccounts={savedAccounts}
         onRemoveSavedAccount={(accId) => {
           setSavedAccounts((prev) => prev.filter((a) => a.id !== accId));
