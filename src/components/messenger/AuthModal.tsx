@@ -364,25 +364,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     >
       <div id="recaptcha-auth-container" />
 
-      {/* Top action button: always allow entering the system immediately */}
+      {/* Top Bar: Secure Header (no unauthorized bypass) */}
       <div className="w-full max-w-md mx-auto px-6 pt-5 flex items-center justify-between shrink-0">
         <span className="text-[11px] font-medium text-slate-400">AuraChat v2.5</span>
-        <button
-          onClick={() => {
-            playReactionSound();
-            const target = lastUser || (allProfiles.length > 0 ? allProfiles[0] : null);
-            if (target) {
-              onLogin(target);
-            } else if (onClose) {
-              onClose();
-            }
-          }}
-          className="px-3.5 py-1.5 rounded-full bg-[#17212b] hover:bg-[#202b36] border border-[#30445a] hover:border-[#64b5f6] text-xs font-semibold text-[#64b5f6] hover:text-white transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
-          title="Войти сразу в систему"
-        >
-          <span>В систему</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-full bg-[#17212b] hover:bg-[#202b36] border border-[#30445a] text-slate-400 hover:text-white transition cursor-pointer"
+            title="Закрыть"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Main Full-Screen Centered Content */}
@@ -397,9 +391,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* =====================================================================
-            ЭКРАН 1: СТАРТОВАЯ СТРАНИЦА НА ВЕСЬ ЭКРАН (По рисунку пользователя)
-            Круглый логотип + Имя приложения + овальные кнопки:
-            [ Профили ] [ По тел. ] [ По почте ] [ Регистрация ] + [ Сразу в систему ]
+            ЭКРАН 1: СТАРТОВАЯ СТРАНИЦА НА ВЕСЬ ЭКРАН (Защищённый вход)
+            Круглый логотип + Имя приложения + защищённые кнопки:
+            [ Профили с ПИН ] [ По тел. ] [ По почте ] [ Регистрация ]
            ===================================================================== */}
         {view === 'home' && (
           <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in">
@@ -421,31 +415,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </p>
             </div>
 
-            {/* Овальные кнопки в столбик */}
+            {/* Овальные защищённые кнопки в столбик */}
             <div className="w-full max-w-xs space-y-3">
-              {/* 1. Сразу в систему (без барьеров) */}
-              <button
-                type="button"
-                onClick={() => {
-                  playReactionSound();
-                  const target = lastUser || (allProfiles.length > 0 ? allProfiles[0] : null);
-                  if (target) {
-                    onLogin(target);
-                  } else if (onClose) {
-                    onClose();
-                  }
-                }}
-                className="w-full py-3.5 px-6 rounded-full bg-linear-to-r from-[#0077FF] to-sky-500 hover:from-[#0066DD] hover:to-sky-600 border-2 border-sky-300/40 text-white font-extrabold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-xl shadow-blue-500/30 active:scale-98"
-                title="Войти сразу в систему"
-              >
-                <span className="flex items-center gap-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
-                  <span>Сразу в систему</span>
-                </span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              {/* 2. Профили */}
+              {/* 1. Профили */}
               <button
                 type="button"
                 onClick={() => {

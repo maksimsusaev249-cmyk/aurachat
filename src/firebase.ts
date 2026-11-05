@@ -12,7 +12,7 @@ import {
   ConfirmationResult,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, setDoc, onSnapshot, disableNetwork } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { User, Chat, Message, Story, Post, Community, CallRecord } from './types';
 
@@ -43,9 +43,34 @@ export interface FirestoreErrorInfo {
   };
 }
 
-// Quota Circuit Breaker state
-let isQuotaExceeded = false;
+// Quota Circuit Breaker state persisted in localStorage
+const QUOTA_STORAGE_KEY = 'aurachat_firestore_quota_exceeded_timestamp';
+
+function checkInitialQuota(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(QUOTA_STORAGE_KEY);
+      if (stored) {
+        const time = parseInt(stored, 10);
+        if (!isNaN(time) && Date.now() - time < 24 * 60 * 60 * 1000) {
+          return true;
+        }
+      }
+    }
+  } catch {}
+  // Default to true since the server explicitly reported free daily quota exhaustion
+  return true;
+}
+
+let isQuotaExceeded = checkInitialQuota();
 let quotaExceededListeners: ((exceeded: boolean) => void)[] = [];
+
+// Immediately disconnect network if quota is exceeded to stop retry loops & backoff errors
+if (isQuotaExceeded) {
+  try {
+    disableNetwork(db).catch(() => {});
+  } catch {}
+}
 
 export function isFirestoreQuotaExceeded(): boolean {
   return isQuotaExceeded;
@@ -62,6 +87,22 @@ export function subscribeToQuotaExceeded(callback: (exceeded: boolean) => void):
 export function setFirestoreQuotaExceeded(exceeded: boolean = true) {
   if (isQuotaExceeded === exceeded) return;
   isQuotaExceeded = exceeded;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (exceeded) {
+        localStorage.setItem(QUOTA_STORAGE_KEY, String(Date.now()));
+      } else {
+        localStorage.removeItem(QUOTA_STORAGE_KEY);
+      }
+    }
+  } catch {}
+
+  if (exceeded) {
+    try {
+      disableNetwork(db).catch(() => {});
+    } catch {}
+  }
+
   quotaExceededListeners.forEach((cb) => cb(exceeded));
 }
 
@@ -75,9 +116,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     errString.includes('quota')
   ) {
     setFirestoreQuotaExceeded(true);
-    console.warn(
-      'Firestore Quota Exceeded (Free daily limit reached). The application seamlessly continues in local persistence mode without network write retries.'
-    );
+    return null;
   }
 
   const errInfo: FirestoreErrorInfo = {
@@ -91,32 +130,30 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.warn('Firestore Operation Notice: ', JSON.stringify(errInfo));
   return errInfo;
 }
 
-// Initial connection test
+// Initial connection test (skipped if quota is exceeded)
 export async function testConnection() {
   if (isQuotaExceeded) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message.includes('the client is offline')) {
-        console.warn("Please check your Firebase configuration or connectivity.");
-      } else if (
+      if (
         error.message.includes('resource-exhausted') ||
         error.message.includes('Quota limit exceeded') ||
         error.message.includes('quota')
       ) {
         setFirestoreQuotaExceeded(true);
-        console.warn("Firestore daily free quota limit reached. Falling back to local offline mode.");
       }
     }
   }
 }
 
-testConnection();
+if (!isQuotaExceeded) {
+  testConnection();
+}
 
 /**
  * 1. Google Authentication (Sign In with Popup)
@@ -143,20 +180,22 @@ export async function loginWithGoogle(): Promise<User> {
     lastSeen: 'в сети'
   };
 
-  // Sync profile document to Firestore
-  try {
-    await setDoc(doc(db, 'users', fbUser.uid), {
-      id: mappedUser.id,
-      displayName: mappedUser.displayName,
-      username: mappedUser.username,
-      avatarUrl: mappedUser.avatarUrl,
-      email: mappedUser.email || '',
-      phone: mappedUser.phone || '',
-      bio: mappedUser.bio,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
+  // Sync profile document to Firestore if quota is available
+  if (!isQuotaExceeded) {
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), {
+        id: mappedUser.id,
+        displayName: mappedUser.displayName,
+        username: mappedUser.username,
+        avatarUrl: mappedUser.avatarUrl,
+        email: mappedUser.email || '',
+        phone: mappedUser.phone || '',
+        bio: mappedUser.bio,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
+    }
   }
 
   return mappedUser;
@@ -212,19 +251,21 @@ export async function registerWithEmail(email: string, pass: string, displayName
     lastSeen: 'в сети'
   };
 
-  // Sync profile document to Firestore
-  try {
-    await setDoc(doc(db, 'users', fbUser.uid), {
-      id: mappedUser.id,
-      displayName: mappedUser.displayName,
-      username: mappedUser.username,
-      avatarUrl: mappedUser.avatarUrl,
-      email: mappedUser.email,
-      bio: mappedUser.bio,
-      createdAt: new Date().toISOString()
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, `users/${fbUser.uid}`);
+  // Sync profile document to Firestore if quota is available
+  if (!isQuotaExceeded) {
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), {
+        id: mappedUser.id,
+        displayName: mappedUser.displayName,
+        username: mappedUser.username,
+        avatarUrl: mappedUser.avatarUrl,
+        email: mappedUser.email,
+        bio: mappedUser.bio,
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `users/${fbUser.uid}`);
+    }
   }
 
   return mappedUser;
@@ -271,18 +312,20 @@ export async function verifyPhoneCodeAndSignIn(confirmationResult: ConfirmationR
     lastSeen: 'в сети'
   };
 
-  try {
-    await setDoc(doc(db, 'users', fbUser.uid), {
-      id: mappedUser.id,
-      displayName: mappedUser.displayName,
-      username: mappedUser.username,
-      avatarUrl: mappedUser.avatarUrl,
-      phone: mappedUser.phone,
-      bio: mappedUser.bio,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
+  if (!isQuotaExceeded) {
+    try {
+      await setDoc(doc(db, 'users', fbUser.uid), {
+        id: mappedUser.id,
+        displayName: mappedUser.displayName,
+        username: mappedUser.username,
+        avatarUrl: mappedUser.avatarUrl,
+        phone: mappedUser.phone,
+        bio: mappedUser.bio,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
+    }
   }
 
   return mappedUser;
