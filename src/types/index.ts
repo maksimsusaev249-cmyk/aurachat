@@ -168,6 +168,7 @@ export interface Message {
     trimmedStartSec?: number;
     trimmedLengthSec?: number;
     mediaUrl?: string;
+    replyTo?: { id: string; senderName: string; content: string };
   };
   createdAt: string;
   status: 'sent' | 'delivered' | 'read';

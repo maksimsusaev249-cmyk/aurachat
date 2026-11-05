@@ -19,6 +19,7 @@ import {
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
 import { isVideoMedia } from '../../utils/mediaUtils';
+import { formatSmartTime } from '../../utils/dateUtils';
 
 import { ViewTargetUser } from './OtherUserProfileModal';
 import { ShareReelModal } from './ShareReelModal';
@@ -351,7 +352,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
       userName: 'Александр',
       userAvatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=AlexNova&backgroundColor=1e293b',
       content: newCommentText.trim(),
-      createdAt: 'Только что',
+      createdAt: formatSmartTime(new Date()),
       likesCount: 0
     };
     onAddComment?.(reelId, newComment);
@@ -735,7 +736,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                     </button>
 
                     <span className="text-[11px] text-white/75 font-medium">
-                      • {reel.createdAt}
+                      • {formatSmartTime(reel.createdAt)}
                     </span>
 
                     <button
@@ -811,7 +812,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                                 <span className="font-semibold text-[#71aaeb] text-xs">{c.userName}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] text-[#828282]">{c.createdAt}</span>
+                                <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt)}</span>
                                 <button 
                                   onClick={() => handleShareComment(c.id)}
                                   className="p-1 rounded hover:bg-[#2c2d2e] text-[#828282] hover:text-white transition cursor-pointer"

@@ -41,6 +41,7 @@ import {
 import { playPostMusicTrack, stopPostMusicTrack, playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
 import { isVideoMedia, fileToPersistentUrl } from '../../utils/mediaUtils';
+import { formatSmartTime } from '../../utils/dateUtils';
 
 import { ViewTargetUser } from './OtherUserProfileModal';
 import { ShareReelModal } from './ShareReelModal';
@@ -254,7 +255,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
       content: text || (attached?.type === 'gif' ? 'Отправил(а) гифку' : 'Отправил(а) фото'),
       mediaUrl: attached?.url,
       mediaType: attached?.type,
-      createdAt: 'Только что',
+      createdAt: formatSmartTime(new Date()),
       likesCount: 0
     };
 
@@ -722,7 +723,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                         </button>
                       )}
                     </div>
-                    <div className="text-[11px] text-[#828282]">{post.createdAt}</div>
+                    <div className="text-[11px] text-[#828282]">{formatSmartTime(post.createdAt)}</div>
                   </div>
                 </div>
 
@@ -1031,7 +1032,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                           )}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-[#828282]">{c.createdAt}</span>
+                          <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt)}</span>
                           <button 
                             onClick={() => handleShareComment(c.id)}
                             className="p-1 rounded hover:bg-[#2c2d2e] text-[#828282] hover:text-white transition cursor-pointer"

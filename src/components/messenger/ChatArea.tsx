@@ -39,7 +39,12 @@ import {
   LogOut,
   ShieldAlert,
   AlertCircle,
-  Check
+  Check,
+  CornerUpLeft,
+  Share2,
+  Pin,
+  PinOff,
+  Search
 } from 'lucide-react';
 import { CreateTopicModal } from './CreateTopicModal';
 import { InviteAndQRModal } from './InviteAndQRModal';
@@ -148,6 +153,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
+
+  // VK Messenger Advanced Features State
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [pinnedMessage, setPinnedMessage] = useState<Message | null>(null);
+  const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [audioSpeedMap, setAudioSpeedMap] = useState<Record<string, 1 | 1.5 | 2>>({});
+  const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
 
   // Typing status indicator simulation
   const [typingUser, setTypingUser] = useState<string | null>(null);
@@ -296,7 +309,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     triggerToast(chat.type === 'channel' ? 'Вы покинули канал' : 'Вы покинули группу');
   };
 
-  // Handle Send: реальная отправка сообщения без роботизированных ботов
+  // Handle Send: реальная отправка сообщения в AuraChat
   const handleSend = () => {
     if (isBlocked) {
       triggerToast('Собеседник заблокирован. Разблокируйте, чтобы отправлять сообщения.');
@@ -308,19 +321,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     setShowEmojiPicker(false);
     setShowManagerTemplates(false);
 
-    // Play sound (if enabled)
+    const replyMeta = replyingToMessage ? {
+      replyTo: {
+        id: replyingToMessage.id,
+        senderName: replyingToMessage.senderName,
+        content: replyingToMessage.content || 'Медиасообщение'
+      }
+    } : undefined;
+
+    setReplyingToMessage(null);
     playSentSound();
 
     if (senderRole === 'interlocutor') {
       // Отправка от лица собеседника / менеджера
-      onSendMessage('text', textToSend, undefined, undefined, {
+      onSendMessage('text', textToSend, undefined, replyMeta, {
         id: chat.id,
         name: chat.title,
         avatar: chat.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(chat.title)}`
       });
     } else {
       // Отправка от лица текущего пользователя
-      onSendMessage('text', textToSend);
+      onSendMessage('text', textToSend, undefined, replyMeta);
     }
   };
 
@@ -548,6 +569,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <span className="hidden lg:inline">Управление</span>
             </button>
           )}
+
+          <button
+            onClick={() => setIsChatSearchOpen((prev) => !prev)}
+            className={`p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
+              isChatSearchOpen ? 'bg-[#0077FF] text-white' : 'hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white'
+            }`}
+            title="Поиск по истории сообщений в чате AuraChat"
+          >
+            <Search className="w-4 h-4" />
+          </button>
 
           {chat.inviteCode && (
             <button
@@ -847,6 +878,63 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
       )}
 
+      {/* IN-CHAT MESSAGE SEARCH OVERLAY (ПОИСК В ПЕРЕПИСКЕ) */}
+      {isChatSearchOpen && (
+        <div className="w-full bg-[#1c1c20] border-b border-[#2e2e2e] px-4 py-2 flex items-center gap-2 text-xs text-white shrink-0 animate-in fade-in slide-in-from-top-1 z-10">
+          <Search className="w-4 h-4 text-[#71aaeb] shrink-0" />
+          <input
+            type="text"
+            autoFocus
+            placeholder="Поиск по истории сообщений в этом чате..."
+            value={chatSearchQuery}
+            onChange={(e) => setChatSearchQuery(e.target.value)}
+            className="flex-1 bg-[#141414] text-white text-xs px-3 py-1.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF] transition"
+          />
+          {chatSearchQuery && (
+            <span className="text-[11px] text-[#828282] shrink-0 font-medium">
+              Найдено: {messages.filter((m) => (m.content || '').toLowerCase().includes(chatSearchQuery.toLowerCase())).length}
+            </span>
+          )}
+          <button
+            onClick={() => {
+              setIsChatSearchOpen(false);
+              setChatSearchQuery('');
+            }}
+            className="p-1 rounded-lg text-[#828282] hover:text-white transition cursor-pointer shrink-0"
+            title="Закрыть поиск"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* PINNED MESSAGE BANNER (ЗАКРЕПЛЁННОЕ СООБЩЕНИЕ В ЧАТЕ) */}
+      {pinnedMessage && (
+        <div className="w-full bg-[#1c1c24] border-b border-[#2e2e32] px-4 py-2 flex items-center justify-between gap-3 text-xs text-[#e1e3e6] shrink-0 z-10 animate-in fade-in">
+          <div
+            onClick={() => {
+              const el = document.getElementById(`msg_${pinnedMessage.id}`);
+              el?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer hover:opacity-90 transition"
+            title="Нажмите, чтобы перейти к закрепленному сообщению"
+          >
+            <Pin className="w-3.5 h-3.5 text-[#71aaeb] shrink-0 fill-current" />
+            <div className="min-w-0 flex-1 truncate text-xs">
+              <span className="font-semibold text-[#71aaeb] mr-1">Закреплённое сообщение:</span>
+              <span className="text-[#939393] truncate">{pinnedMessage.content || 'Медиасообщение'}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setPinnedMessage(null)}
+            className="p-1 rounded-full text-[#828282] hover:text-white transition cursor-pointer shrink-0"
+            title="Открепить сообщение"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* 2. FORUM TOPICS BAR */}
       {isGroupOrChannel && (
         <div className="w-full min-w-0 max-w-full bg-[#19191a] border-b border-[#2e2e2e] flex items-center px-2 py-1.5 shrink-0 gap-1.5 text-[11px] select-none overflow-hidden">
@@ -985,25 +1073,52 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
               {/* Message Bubble Container */}
               <div className="relative min-w-0 max-w-full">
-                {/* Floating Quick Reaction Bar */}
+                {/* Floating Quick Action Bar (VK / Telegram style: Reactions, Reply, Pin, Forward) */}
                 {hoveredMessageId === msg.id && (
-                  <div className={`absolute -top-8 z-20 flex items-center gap-1 bg-[#222222] border border-[#2e2e2e] rounded-full px-2 py-0.5 shadow-xl transition ${
+                  <div className={`absolute -top-8 z-20 flex items-center gap-1 bg-[#222222] border border-[#2e2e2e] rounded-full px-2 py-0.5 shadow-xl transition animate-in fade-in zoom-in-95 ${
                     isMe ? 'right-0' : 'left-0'
                   }`}>
                     {['❤️', '👍', '🔥', '😂', '🚀'].map((em) => (
                       <button
                         key={em}
                         onClick={() => handleReactionClick(msg.id, em)}
-                        className="text-sm hover:scale-110 transition p-0.5 cursor-pointer"
+                        className="text-xs sm:text-sm hover:scale-125 transition p-0.5 cursor-pointer"
+                        title={`Реакция ${em}`}
                       >
                         {em}
                       </button>
                     ))}
+                    <div className="w-px h-3 bg-[#3a3b3c] mx-0.5" />
+                    <button
+                      onClick={() => setReplyingToMessage(msg)}
+                      className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
+                      title="Ответить на сообщение"
+                    >
+                      <CornerUpLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPinnedMessage(msg);
+                        triggerToast('📌 Сообщение закреплено вверху чата');
+                      }}
+                      className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
+                      title="Закрепить сообщение"
+                    >
+                      <Pin className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setForwardingMessage(msg)}
+                      className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
+                      title="Переслать сообщение"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
 
-                {/* The Bubble */}
+                {/* The Message Bubble */}
                 <div
+                  id={`msg_${msg.id}`}
                   className={`p-2.5 sm:p-3 rounded-2xl relative text-xs leading-relaxed transition break-words [overflow-wrap:anywhere] max-w-full overflow-hidden ${
                     isMe
                       ? 'bg-[#2b5278] text-white rounded-br-sm'
@@ -1015,6 +1130,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <span className="font-semibold text-[#71aaeb] text-[11px] truncate">
                         {msg.senderName}
                       </span>
+                    </div>
+                  )}
+
+                  {/* QUOTED REPLY CARD (ВК / TELEGRAM ЦИТАТА ОТВЕТА) */}
+                  {msg.mediaMeta?.replyTo && (
+                    <div className="mb-2 p-2 rounded-xl bg-black/30 border-l-2 border-[#71aaeb] text-[11px] select-none">
+                      <div className="font-semibold text-[#71aaeb] text-[10px] truncate">
+                        {msg.mediaMeta.replyTo.senderName}
+                      </div>
+                      <div className="text-[#e1e3e6] truncate opacity-90 text-[11px] mt-0.5">
+                        {msg.mediaMeta.replyTo.content}
+                      </div>
                     </div>
                   )}
 
@@ -1254,7 +1381,28 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           <span className="truncate">Только администраторы могут публиковать записи в этом канале</span>
         </div>
       ) : (
-        <div className="w-full min-w-0 max-w-full px-2 sm:px-3 py-2 bg-[#222222] border-t border-[#2e2e2e] flex items-center gap-1 sm:gap-1.5 shrink-0 relative overflow-visible">
+        <div className="w-full flex flex-col shrink-0">
+          {/* QUOTED REPLY PREVIEW BAR (ВК ПРЕВЬЮ ОТВЕТА НА СООБЩЕНИЕ) */}
+          {replyingToMessage && (
+            <div className="w-full bg-[#1c1c20] border-t border-[#2e2e2e] px-3.5 py-1.5 flex items-center justify-between gap-2 text-xs text-[#e1e3e6] shrink-0 animate-in fade-in">
+              <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                <CornerUpLeft className="w-4 h-4 text-[#71aaeb] shrink-0" />
+                <div className="min-w-0 flex-1 truncate text-xs">
+                  <span className="font-semibold text-[#71aaeb] mr-1">Ответ пользователю {replyingToMessage.senderName}:</span>
+                  <span className="text-[#939393] truncate">{replyingToMessage.content || 'Медиасообщение'}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setReplyingToMessage(null)}
+                className="p-1 rounded-full text-[#828282] hover:text-white transition cursor-pointer shrink-0"
+                title="Отменить ответ"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="w-full min-w-0 max-w-full px-2 sm:px-3 py-2 bg-[#222222] border-t border-[#2e2e2e] flex items-center gap-1 sm:gap-1.5 shrink-0 relative overflow-visible">
           {/* Floating Emoji Picker Popover */}
           {showEmojiPicker && (
             <div className="absolute bottom-12 left-2 bg-[#222222] border border-[#2e2e2e] rounded-2xl p-2.5 shadow-2xl z-30 flex flex-wrap gap-1 w-56">
@@ -1378,6 +1526,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           >
             <Send className="w-3.5 h-3.5" />
           </button>
+        </div>
         </div>
       )}
 

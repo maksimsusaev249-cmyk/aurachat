@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Chat, Community, Story, User } from '../../types';
 import { initialContactsList } from './ContactsModal';
+import { formatSmartTime } from '../../utils/dateUtils';
 import { 
   Search, 
   Menu, 
@@ -532,7 +533,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                         )}
                       </h4>
                       <span className="text-[11px] shrink-0 text-[#828282]">
-                        {c.lastMessageTime}
+                        {formatSmartTime(c.lastMessageTime)}
                       </span>
                     </div>
 

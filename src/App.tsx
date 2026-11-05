@@ -47,6 +47,7 @@ import { SettingsTab } from './components/messenger/SettingsModal';
 import { GlobalSearchModal } from './components/messenger/GlobalSearchModal';
 import { playReactionSound, playSentSound, playNotificationSound } from './utils/audioUtils';
 import { isVideoMedia } from './utils/mediaUtils';
+import { formatSmartTime, getCurrentFormattedTime } from './utils/dateUtils';
 import { 
   syncAccountToCloud, 
   savePlatformStateToCloud, 
@@ -964,12 +965,16 @@ export default function App() {
           if (prev) return prev;
           return {
             direction: 'incoming',
-            contactName: data.contactName || 'Входящий звонок',
-            avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
+            contactName: data.contactName || 'Входящий звонок AuraChat',
+            avatarUrl: data.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
             isVideo: Boolean(data.isVideo),
             callId: data.callId
           };
         });
+      }
+
+      if (data.type === 'CALL_END') {
+        setActiveCallSession(null);
       }
     };
 
@@ -1026,6 +1031,8 @@ export default function App() {
       if (data.type !== 'NEW_CHAT_MESSAGE' || !data.message) return;
 
       const incomingMsg: Message = data.message;
+      const isFromOthers = incomingMsg.senderId !== currentUser.id;
+
       setMessagesMap((prev) => {
         const list = prev[data.chatId] || [];
         if (list.some((m) => m.id === incomingMsg.id)) return prev;
@@ -1038,16 +1045,17 @@ export default function App() {
       setChats((prev) => {
         const exists = prev.some((c) => c.id === data.chatId);
         if (exists) {
-          return prev.map((c) =>
-            c.id === data.chatId
-              ? {
-                  ...c,
-                  lastMessage: incomingMsg.content || 'Сообщение',
-                  lastMessageTime: 'Только что',
-                  unreadCount: (c.unreadCount || 0) + 1
-                }
-              : c
-          );
+          return prev.map((c) => {
+            if (c.id !== data.chatId) return c;
+            const isCurrentlyOpen = selectedChat.id === data.chatId;
+            const nextUnread = isFromOthers && !isCurrentlyOpen ? (c.unreadCount || 0) + 1 : 0;
+            return {
+              ...c,
+              lastMessage: incomingMsg.content || 'Сообщение',
+              lastMessageTime: formatSmartTime(incomingMsg.createdAt || new Date()),
+              unreadCount: nextUnread
+            };
+          });
         }
         const sender = data.senderUser;
         const newChat: Chat = {
@@ -1057,8 +1065,8 @@ export default function App() {
           avatarUrl: sender ? sender.avatarUrl : incomingMsg.senderAvatar,
           isPrivate: true,
           lastMessage: incomingMsg.content || 'Сообщение',
-          lastMessageTime: 'Только что',
-          unreadCount: 1,
+          lastMessageTime: formatSmartTime(incomingMsg.createdAt || new Date()),
+          unreadCount: isFromOthers ? 1 : 0,
           membersCount: 2,
           members: [
             {
@@ -1244,7 +1252,8 @@ export default function App() {
           ? {
               ...c,
               lastMessage: type === 'video_note' ? '📹 Кружочек' : type === 'voice' ? '🎤 Голосовое сообщение' : content,
-              lastMessageTime: 'Только что'
+              lastMessageTime: formatSmartTime(new Date()),
+              unreadCount: 0
             }
           : c
       )
@@ -2129,14 +2138,27 @@ export default function App() {
                 currentUser={currentUser}
                 onBackMobile={() => setIsMobileChatOpen(false)}
                 onSendMessage={handleSendMessage}
-                onStartCall={(isVideo) =>
+                onStartCall={(isVideo) => {
                   setActiveCallSession({
                     direction: 'outgoing',
                     contactName: selectedChat.title,
                     avatarUrl: selectedChat.avatarUrl,
                     isVideo
-                  })
-                }
+                  });
+                  try {
+                    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+                      const channel = new BroadcastChannel('applet_webrtc_call_sync');
+                      channel.postMessage({
+                        type: 'CALL_OFFER',
+                        contactName: currentUser.displayName,
+                        avatarUrl: currentUser.avatarUrl,
+                        isVideo: Boolean(isVideo),
+                        callId: 'call_' + Date.now()
+                      });
+                      channel.close();
+                    }
+                  } catch {}
+                }}
                 onOpenVideoNoteRecorder={() => setIsVideoNoteRecorderOpen(true)}
                 onCreateTopic={handleCreateTopic}
                 onAddReaction={handleAddReaction}
