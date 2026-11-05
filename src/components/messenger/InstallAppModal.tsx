@@ -50,16 +50,24 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const handleDownloadApkClick = () => {
-    downloadApk();
-    setDownloadSuccess('Файл NovaChat-v2.5.0.apk скачан! Откройте его на Android для установки.');
-    setTimeout(() => setDownloadSuccess(null), 5000);
+  const handleDownloadApkClick = async () => {
+    const result = await downloadApk();
+    if (result === 'native_installed') {
+      setDownloadSuccess('Приложение AuraChat успешно установлено на устройство!');
+    } else {
+      setDownloadSuccess('Лаунчер AuraChat-App.html скачан! Откройте его или нажмите «Добавить на гл. экран» в меню браузера.');
+    }
+    setTimeout(() => setDownloadSuccess(null), 6000);
   };
 
-  const handleDownloadDesktopClick = () => {
-    downloadDesktopInstaller();
-    setDownloadSuccess('Ярлык для рабочего стола скачан! Перетащите его на рабочий стол.');
-    setTimeout(() => setDownloadSuccess(null), 5000);
+  const handleDownloadDesktopClick = async () => {
+    const result = await downloadDesktopInstaller();
+    if (result === 'native_installed') {
+      setDownloadSuccess('Приложение AuraChat успешно установлено на компьютер!');
+    } else {
+      setDownloadSuccess('Ярлык AuraChat.url скачан! Перенесите его на Рабочий стол для быстрого запуска.');
+    }
+    setTimeout(() => setDownloadSuccess(null), 6000);
   };
 
   return (
@@ -222,7 +230,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {/* TAB 2: ANDROID (.APK) */}
+          {/* TAB 2: ANDROID (WebAPK / Быстрая установка) */}
           {activeTab === 'android' && (
             <div className="space-y-4 animate-in fade-in duration-150">
               <div className="p-4 rounded-2xl bg-[#14261e] border border-emerald-900/40 flex flex-col sm:flex-row items-center gap-4">
@@ -230,30 +238,30 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                   <Smartphone className="w-8 h-8" />
                 </div>
                 <div className="text-center sm:text-left min-w-0">
-                  <h3 className="font-bold text-base text-white">NovaChat APK для Android</h3>
+                  <h3 className="font-bold text-base text-white">AuraChat для Android (WebAPK)</h3>
                   <p className="text-xs text-slate-300 mt-1">
-                    Прямая загрузка APK файла. Без ожидания модерации Google Play. Полная поддержка камеры, кружочков и фоновых звонков.
+                    Мгновенная установка без ошибки «синтаксического анализа пакета». Полная поддержка камеры, кружочков и звонков.
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons for Android */}
               <div className="space-y-2">
-                <button
-                  onClick={handleDownloadApkClick}
-                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Download className="w-5 h-5" />
-                  <span>Скачать APK файл (NovaChat-v2.5.0.apk)</span>
-                </button>
-
-                {isInstallable && (
+                {isInstallable ? (
                   <button
                     onClick={promptInstall}
-                    className="w-full py-2.5 px-4 rounded-xl bg-[#243344] hover:bg-[#2e4055] text-slate-200 text-xs font-semibold transition flex items-center justify-center gap-2 cursor-pointer border border-[#314459]"
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Zap className="w-4 h-4 text-emerald-400" />
-                    <span>Быстрая установка WebAPK на главный экран</span>
+                    <Zap className="w-5 h-5" />
+                    <span>Установить приложение в 1 клик (WebAPK)</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDownloadApkClick}
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Download className="w-5 h-5" />
+                    <span>Быстрая установка AuraChat на телефон</span>
                   </button>
                 )}
               </div>
@@ -261,7 +269,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
               {/* 3 Steps Guide for Android */}
               <div className="p-4 rounded-2xl bg-[#121b24] border border-[#202d3a] space-y-3">
                 <h4 className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
-                  <span>Инструкция по установке APK:</span>
+                  <span>Как установить на Android за 5 секунд без ошибок:</span>
                 </h4>
 
                 <div className="space-y-2.5 text-xs text-slate-300">
@@ -269,27 +277,27 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
                     <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                       1
                     </span>
-                    <span>Нажмите <strong>«Скачать APK файл»</strong> выше и дождитесь окончания загрузки.</span>
+                    <span>Нажмите зелёную кнопку <strong>«Установить приложение в 1 клик»</strong> выше (или откройте меню браузера <strong>⋮</strong> в правом верхнем углу).</span>
                   </div>
 
                   <div className="flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                       2
                     </span>
-                    <span>Откройте файл в шторке уведомлений или в папке «Загрузки».</span>
+                    <span>Выберите пункт <strong>«Установить приложение»</strong> (или «Добавить на гл. экран»).</span>
                   </div>
 
                   <div className="flex items-start gap-2.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center shrink-0 text-[11px]">
                       3
                     </span>
-                    <span>При запросе выберите «Разрешить установку» и нажмите «Установить».</span>
+                    <span>Подтвердите нажатием <strong>«Установить»</strong> — система Android создаст нативное приложение без ошибок пакета!</span>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-[#202d3a] flex items-center gap-2 text-[11px] text-emerald-400">
                   <Check className="w-4 h-4" />
-                  <span>Готово! Иконка появится на экране, и ты сразу авторизован в системе.</span>
+                  <span>Готово! Иконка AuraChat появится на главном экране телефона.</span>
                 </div>
               </div>
             </div>

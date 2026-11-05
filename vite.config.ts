@@ -1,11 +1,27 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {defineConfig, Plugin} from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function copyDistToBuildPlugin(): Plugin {
+  return {
+    name: 'copy-dist-to-build-plugin',
+    closeBundle() {
+      try {
+        const distDir = path.resolve(__dirname, 'dist');
+        const buildDir = path.resolve(__dirname, 'build');
+        if (fs.existsSync(distDir)) {
+          fs.cpSync(distDir, buildDir, { recursive: true });
+        }
+      } catch {}
+    }
+  };
+}
 
 function downloadProxyPlugin(): Plugin {
   return {
@@ -47,7 +63,7 @@ function downloadProxyPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), downloadProxyPlugin()],
+    plugins: [react(), tailwindcss(), downloadProxyPlugin(), copyDistToBuildPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
