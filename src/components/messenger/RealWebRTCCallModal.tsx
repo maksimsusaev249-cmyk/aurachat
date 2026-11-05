@@ -24,7 +24,9 @@ import {
   MessageSquare,
   X,
   Monitor,
-  ScreenShare
+  ScreenShare,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import {
   startOutgoingDialTone,
@@ -36,6 +38,10 @@ import {
   previewRingtone,
   RingtoneMode
 } from '../../utils/audioUtils';
+import {
+  publishCallSignalToCloud,
+  subscribeToCallSignalsFromCloud
+} from '../../firebase';
 
 export interface CallSession {
   direction: 'outgoing' | 'incoming';
@@ -43,6 +49,10 @@ export interface CallSession {
   avatarUrl: string;
   isVideo: boolean;
   callId?: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  callerUserId?: string;
+  callerUsername?: string;
 }
 
 interface RealWebRTCCallModalProps {
@@ -126,6 +136,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
+  // Fullscreen view state for Desktop / Computer
+  const [isDesktopFullscreen, setIsDesktopFullscreen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
+
   // Cross-tab call synchronization channel
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState<boolean>(false);
   const [mainView, setMainView] = useState<'remote' | 'local'>(
@@ -154,58 +172,62 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   useEffect(() => {
     if (!session) return;
     let channel: BroadcastChannel | null = null;
+
+    const handleSignal = (data: { type: string; callId?: string; isVideoEnabled?: boolean; quickResponse?: string }) => {
+      if (!data || (data.callId && session.callId && data.callId !== session.callId)) return;
+
+      if (data.type === 'CALL_ANSWERED' && session.direction === 'outgoing') {
+        if (voicemailTimeoutRef.current) {
+          clearTimeout(voicemailTimeoutRef.current);
+          voicemailTimeoutRef.current = null;
+        }
+        stopCallAudio();
+        playSentSound();
+        callStatusRef.current = 'connected';
+        setCallStatus('connected');
+        startLocalMedia(selectedMicId);
+      }
+
+      if (data.type === 'VIDEO_TOGGLE') {
+        const remoteOn = Boolean(data.isVideoEnabled);
+        setRemoteVideoEnabled(remoteOn);
+        if (remoteOn) {
+          setMainView('remote');
+        } else if (isVideoEnabled) {
+          setMainView('local');
+        }
+      }
+
+      if ((data.type === 'CALL_REJECTED' || data.type === 'CALL_ENDED') && session.direction === 'outgoing') {
+        stopCallAudio();
+        stopLocalStream();
+        if (data.quickResponse) {
+          setCallNotice(`Абонент отклонил вызов: «${data.quickResponse}»`);
+          setTimeout(() => {
+            onClose(0);
+          }, 2200);
+        } else {
+          setCallNotice('Абонент сбросил вызов');
+          setTimeout(() => {
+            onClose(0);
+          }, 1200);
+        }
+      } else if (data.type === 'CALL_CANCELLED' && session.direction === 'incoming') {
+        stopCallAudio();
+        stopLocalStream();
+        setCallNotice('Вызывающий абонент отменил вызов');
+        setTimeout(() => {
+          onClose(0);
+        }, 1200);
+      }
+    };
+
+    // 1. Local BroadcastChannel sync
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         channel = new BroadcastChannel('applet_webrtc_call_sync');
-
         channel.onmessage = (event) => {
-          const data = event.data;
-          if (!data) return;
-
-          if (data.type === 'CALL_ANSWERED' && session.direction === 'outgoing') {
-            if (voicemailTimeoutRef.current) {
-              clearTimeout(voicemailTimeoutRef.current);
-              voicemailTimeoutRef.current = null;
-            }
-            stopCallAudio();
-            playSentSound();
-            callStatusRef.current = 'connected';
-            setCallStatus('connected');
-            startLocalMedia(selectedMicId);
-          }
-
-          if (data.type === 'VIDEO_TOGGLE') {
-            const remoteOn = Boolean(data.isVideoEnabled);
-            setRemoteVideoEnabled(remoteOn);
-            if (remoteOn) {
-              setMainView('remote');
-            } else if (isVideoEnabled) {
-              setMainView('local');
-            }
-          }
-
-          if ((data.type === 'CALL_REJECTED' || data.type === 'CALL_ENDED') && session.direction === 'outgoing') {
-            stopCallAudio();
-            stopLocalStream();
-            if (data.quickResponse) {
-              setCallNotice(`Точка Б отклонила вызов: «${data.quickResponse}»`);
-              setTimeout(() => {
-                onClose(0);
-              }, 2200);
-            } else {
-              setCallNotice('Точка Б сбросила вызов');
-              setTimeout(() => {
-                onClose(0);
-              }, 1200);
-            }
-          } else if (data.type === 'CALL_CANCELLED' && session.direction === 'incoming') {
-            stopCallAudio();
-            stopLocalStream();
-            setCallNotice('Вызывающий абонент отменил вызов');
-            setTimeout(() => {
-              onClose(0);
-            }, 1200);
-          }
+          if (event.data) handleSignal(event.data);
         };
 
         if (session.direction === 'outgoing') {
@@ -220,8 +242,16 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       }
     } catch {}
 
+    // 2. Cloud Firestore Real-time Signaling Across Devices (Phone <-> Computer)
+    const unsubCloudSignals = subscribeToCallSignalsFromCloud((signal) => {
+      if (signal && signal.callId === session.callId) {
+        handleSignal(signal);
+      }
+    });
+
     return () => {
       channel?.close();
+      unsubCloudSignals();
     };
   }, [session]);
 
@@ -419,6 +449,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         channel.close();
       }
     } catch {}
+
+    if (session?.callId) {
+      publishCallSignalToCloud({
+        type: 'CALL_ANSWERED',
+        callId: session.callId,
+        timestamp: Date.now()
+      });
+    }
   };
 
   // Quick response handler: Точка Б сбрасывает и отправляет быстрый ответ
@@ -443,6 +481,15 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         channel.close();
       }
     } catch {}
+
+    if (session?.callId) {
+      publishCallSignalToCloud({
+        type: 'CALL_REJECTED',
+        callId: session.callId,
+        quickResponse: replyText,
+        timestamp: Date.now()
+      });
+    }
 
     onClose(0);
   };
@@ -763,6 +810,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       }
     } catch {}
 
+    if (session?.callId) {
+      publishCallSignalToCloud({
+        type: session?.direction === 'incoming' ? 'CALL_REJECTED' : 'CALL_CANCELLED',
+        callId: session.callId,
+        timestamp: Date.now()
+      });
+    }
+
     const finalDuration = callDuration;
     onClose(finalDuration);
   };
@@ -878,8 +933,12 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   if (!session) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-4 select-none animate-fadeIn">
-      <div className="relative w-full max-w-sm h-[690px] max-h-[95dvh] bg-[#0e1621] border border-[#243344] rounded-3xl overflow-hidden shadow-2xl flex flex-col justify-between p-5 text-white text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-lg p-0 sm:p-2 select-none animate-fadeIn">
+      <div className={`relative transition-all duration-300 bg-[#0e1621] border border-[#243344] overflow-hidden shadow-2xl flex flex-col justify-between text-white text-center ${
+        isDesktopFullscreen
+          ? 'w-full h-full max-w-none max-h-none rounded-none border-none p-4 md:p-8 bg-[#090d14]'
+          : 'w-full max-w-sm h-[690px] max-h-[95dvh] rounded-3xl p-5'
+      }`}>
         
         {/* Main Background Video / Stream (Swappable: Screen Share, Remote or Local) */}
         <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
@@ -894,14 +953,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 className="w-full h-full object-contain"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 pointer-events-none" />
-              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-[#0077FF]/90 backdrop-blur-md text-[10px] font-semibold text-white border border-sky-400/40 flex items-center gap-1.5 shadow-lg z-20">
+              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-[#0077FF]/90 backdrop-blur-md text-[10px] sm:text-xs font-semibold text-white border border-sky-400/40 flex items-center gap-1.5 shadow-lg z-20">
                 <Monitor className="w-3.5 h-3.5 animate-pulse text-sky-200" />
                 <span>Демонстрация экрана активна</span>
               </div>
               <button
                 type="button"
                 onClick={handleToggleScreenShare}
-                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md text-[10px] font-semibold text-white border border-rose-400/40 flex items-center gap-1 cursor-pointer transition z-20 shadow"
+                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md text-[10px] sm:text-xs font-semibold text-white border border-rose-400/40 flex items-center gap-1 cursor-pointer transition z-20 shadow"
                 title="Остановить трансляцию"
               >
                 <span>Остановить</span>
@@ -918,17 +977,17 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 className="w-full h-full object-cover -scale-x-100"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/40 pointer-events-none" />
-              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-mono text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] sm:text-xs font-mono text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>Ваша камера</span>
               </div>
               <button
                 type="button"
                 onClick={handleToggleFacingMode}
-                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-md text-[10px] font-semibold text-white border border-white/15 flex items-center gap-1 cursor-pointer transition z-20"
+                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-md text-[10px] sm:text-xs font-semibold text-white border border-white/15 flex items-center gap-1 cursor-pointer transition z-20"
                 title="Перевернуть камеру"
               >
-                <RefreshCw className="w-3 h-3" />
+                <RefreshCw className="w-3.5 h-3.5" />
                 <span>Камера</span>
               </button>
             </div>
@@ -948,7 +1007,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-[#17212b] via-[#0e1621] to-black">
               {callStatus === 'ringing' && (
-                <div className="absolute w-64 h-64 rounded-full border border-blue-500/30 animate-ping pointer-events-none" />
+                <div className="absolute w-64 h-64 md:w-96 md:h-96 rounded-full border border-blue-500/30 animate-ping pointer-events-none" />
               )}
             </div>
           )}
@@ -958,7 +1017,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         {isVideoEnabled && remoteVideoEnabled && (
           <div
             onClick={handleSwapCameras}
-            className="absolute top-16 right-4 z-20 w-28 h-40 rounded-2xl overflow-hidden border-2 border-amber-400/80 shadow-2xl bg-black group cursor-pointer transition hover:scale-105"
+            className="absolute top-16 right-4 z-20 w-28 h-40 md:w-44 md:h-64 rounded-2xl overflow-hidden border-2 border-amber-400/80 shadow-2xl bg-black group cursor-pointer transition hover:scale-105"
             title="Нажмите, чтобы поменять камеры местами"
           >
             {mainView === 'remote' ? (
@@ -978,23 +1037,23 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
             )}
 
             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-              <span className="px-2 py-1 rounded-xl bg-amber-500 text-black font-extrabold text-[9px] shadow">
+              <span className="px-2 py-1 rounded-xl bg-amber-500 text-black font-extrabold text-[9px] sm:text-xs shadow">
                 Поменять ⟳
               </span>
             </div>
           </div>
         )}
 
-        {/* Top Header: Security, Audio Route (Громкая связь / Bluetooth) & Settings */}
+        {/* Top Header: Security, Audio Route, Sound & Desktop Fullscreen Toggle */}
         <div className="relative z-10 pt-1 flex flex-col items-center">
-          <div className="w-full flex items-center justify-between mb-2 gap-1.5">
+          <div className="w-full flex items-center justify-between mb-2 gap-1.5 flex-wrap">
             
             {/* Audio Route Selector (ГРОМКАЯ СВЯЗЬ / BLUETOOTH / ДИНАМИК) */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowAudioRouteMenu(!showAudioRouteMenu)}
-                className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 border transition cursor-pointer shadow-sm ${
+                className={`px-2.5 py-1 sm:px-3.5 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-bold flex items-center gap-1.5 border transition cursor-pointer shadow-sm ${
                   audioRoute === 'speaker'
                     ? 'bg-amber-500/25 border-amber-400 text-amber-200'
                     : audioRoute === 'bluetooth'
@@ -1016,7 +1075,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
 
               {/* Audio Routing Menu Popover */}
               {showAudioRouteMenu && (
-                <div className="absolute left-0 top-8 z-40 w-52 p-2 bg-[#131c26]/95 border border-[#2b3d52] rounded-2xl shadow-2xl backdrop-blur-md text-left space-y-1 animate-in fade-in">
+                <div className="absolute left-0 top-8 z-40 w-56 p-2 bg-[#131c26]/95 border border-[#2b3d52] rounded-2xl shadow-2xl backdrop-blur-md text-left space-y-1 animate-in fade-in">
                   <div className="text-[10px] font-bold text-slate-400 px-2 py-0.5 uppercase tracking-wider">
                     Вывод звука
                   </div>
@@ -1096,22 +1155,35 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
               )}
             </div>
 
-            {/* Sound & Ringtone Config Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowSoundConfig(!showSoundConfig)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 border transition cursor-pointer ${
-                showSoundConfig
-                  ? 'bg-[#0077FF] border-blue-400 text-white'
-                  : 'bg-black/50 border-white/15 text-slate-200 hover:bg-black/70'
-              }`}
-            >
-              <Settings2 className="w-3 h-3" />
-              <span>Звонок</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {/* Desktop Fullscreen Toggle (На весь экран для ПК) */}
+              <button
+                type="button"
+                onClick={() => setIsDesktopFullscreen(!isDesktopFullscreen)}
+                className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold flex items-center gap-1 border border-white/20 bg-black/60 text-slate-200 hover:bg-black/90 hover:text-white transition cursor-pointer shadow"
+                title={isDesktopFullscreen ? "Свернуть в формат окна" : "Развернуть на весь экран (для ПК)"}
+              >
+                {isDesktopFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-cyan-300" /> : <Maximize2 className="w-3.5 h-3.5 text-cyan-300" />}
+                <span>{isDesktopFullscreen ? "Свернуть" : "На весь экран"}</span>
+              </button>
+
+              {/* Sound & Ringtone Config Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowSoundConfig(!showSoundConfig)}
+                className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-semibold flex items-center gap-1 border transition cursor-pointer ${
+                  showSoundConfig
+                    ? 'bg-[#0077FF] border-blue-400 text-white'
+                    : 'bg-black/50 border-white/15 text-slate-200 hover:bg-black/70'
+                }`}
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                <span>Звонок</span>
+              </button>
+            </div>
           </div>
 
-          <h3 className="text-lg sm:text-xl font-bold text-white drop-shadow truncate max-w-full px-2">
+          <h3 className="text-xl sm:text-2xl md:text-4xl font-extrabold text-white drop-shadow truncate max-w-full px-2 mt-1">
             {session.contactName}
           </h3>
 

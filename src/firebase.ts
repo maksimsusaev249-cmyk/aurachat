@@ -485,3 +485,66 @@ export function subscribeToCloudPlatformState(
   }
 }
 
+export interface CallSignalPayload {
+  type: 'CALL_OFFER' | 'CALL_ANSWERED' | 'CALL_REJECTED' | 'CALL_ENDED' | 'CALL_CANCELLED' | 'VIDEO_TOGGLE';
+  callId: string;
+  callerId?: string;
+  callerName?: string;
+  callerUsername?: string;
+  callerAvatar?: string;
+  targetUserId?: string;
+  targetUsername?: string;
+  targetName?: string;
+  responderId?: string;
+  quickResponse?: string;
+  isVideo?: boolean;
+  isVideoEnabled?: boolean;
+  timestamp: number;
+}
+
+/**
+ * Publishes a real-time call signal (OFFER, ANSWER, REJECT, END, CANCEL) to Cloud Firestore.
+ */
+export async function publishCallSignalToCloud(signal: CallSignalPayload): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (isQuotaExceeded) return;
+  try {
+    const cleanSignal = sanitizeForFirestore({
+      ...signal,
+      updatedAt: Date.now()
+    });
+    await setDoc(doc(db, 'chats', '_aurachat_call_signal'), cleanSignal, { merge: false });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'chats/_aurachat_call_signal');
+  }
+}
+
+/**
+ * Subscribes to real-time call signals from Cloud Firestore across all devices and accounts.
+ */
+export function subscribeToCallSignalsFromCloud(
+  onSignal: (signal: CallSignalPayload) => void
+): () => void {
+  if (isQuotaExceeded) return () => {};
+  try {
+    let unsub = () => {};
+    unsub = onSnapshot(
+      doc(db, 'chats', '_aurachat_call_signal'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data() as CallSignalPayload;
+          onSignal(data);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.GET, 'chats/_aurachat_call_signal');
+        try { unsub(); } catch {}
+      }
+    );
+    return unsub;
+  } catch {
+    return () => {};
+  }
+}
+
+

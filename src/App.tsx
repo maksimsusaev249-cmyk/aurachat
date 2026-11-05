@@ -52,6 +52,8 @@ import {
   syncAccountToCloud, 
   savePlatformStateToCloud, 
   subscribeToCloudPlatformState,
+  publishCallSignalToCloud,
+  subscribeToCallSignalsFromCloud,
   isFirestoreQuotaExceeded,
   subscribeToQuotaExceeded
 } from './firebase';
@@ -982,6 +984,51 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [savedAccounts, userChatsMap, globalCatalogChats, messagesMap, communities, stories, posts, reels, userCallsMap]);
 
+  // Real-time Cloud Signaling listener: Phone <-> Computer calls ringing across devices and accounts
+  useEffect(() => {
+    const unsub = subscribeToCallSignalsFromCloud((signal) => {
+      if (!signal || !signal.timestamp || Date.now() - signal.timestamp > 120000) return;
+
+      if (signal.type === 'CALL_OFFER') {
+        // Do not ring caller's own device as incoming call
+        if (signal.callerId && signal.callerId === currentUser.id) return;
+
+        // Check if target user matches currentUser (by ID, username, or display name)
+        const isTargetMe =
+          (signal.targetUserId && signal.targetUserId === currentUser.id) ||
+          (signal.targetUsername && signal.targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
+          (signal.targetName && (
+            signal.targetName.toLowerCase() === currentUser.displayName.toLowerCase() ||
+            currentUser.displayName.toLowerCase().includes(signal.targetName.toLowerCase()) ||
+            signal.targetName.toLowerCase().includes(currentUser.displayName.toLowerCase())
+          )) ||
+          (!signal.targetUserId && !signal.targetUsername); // Generic call
+
+        if (isTargetMe) {
+          setActiveCallSession((prev) => {
+            if (prev) return prev;
+            return {
+              direction: 'incoming',
+              contactName: signal.callerName || signal.callerUsername || 'Входящий звонок AuraChat',
+              avatarUrl: signal.callerAvatar || 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
+              isVideo: Boolean(signal.isVideo),
+              callId: signal.callId,
+              callerUserId: signal.callerId,
+              callerUsername: signal.callerUsername
+            };
+          });
+        }
+      } else if (signal.type === 'CALL_ENDED' || signal.type === 'CALL_CANCELLED') {
+        setActiveCallSession((prev) => {
+          if (prev && prev.callId === signal.callId) return null;
+          return prev;
+        });
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser]);
+
   // Cross-tab signaling: when another subscriber calls from another tab, trigger real incoming call
   useEffect(() => {
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
@@ -1862,16 +1909,35 @@ export default function App() {
     if (selectedContacts.length === 1) {
       // Single contact: direct call, no group created
       const contact = selectedContacts[0];
+      const callId = 'call_' + Date.now();
       setActiveCallSession({
         direction: 'outgoing',
         contactName: contact.displayName,
         avatarUrl: contact.avatarUrl,
-        isVideo: isVideo
+        isVideo: isVideo,
+        callId,
+        targetUserId: contact.userId,
+        targetUsername: contact.username
+      });
+
+      publishCallSignalToCloud({
+        type: 'CALL_OFFER',
+        callId,
+        callerId: currentUser.id,
+        callerName: currentUser.displayName,
+        callerUsername: currentUser.username,
+        callerAvatar: currentUser.avatarUrl,
+        targetUserId: contact.userId,
+        targetUsername: contact.username,
+        targetName: contact.displayName,
+        isVideo: Boolean(isVideo),
+        timestamp: Date.now()
       });
     } else {
       // Multiple contacts: create group
       const names = selectedContacts.map((c) => c.displayName.split(' ')[0]).join(', ');
       const groupTitle = `📞 Звонок: ${names}`;
+      const callId = 'call_' + Date.now();
 
       const newGroupChat: Chat = {
         id: 'chat_group_call_' + Date.now(),
@@ -1909,7 +1975,20 @@ export default function App() {
         direction: 'outgoing',
         contactName: groupTitle,
         avatarUrl: selectedContacts[0].avatarUrl,
-        isVideo: isVideo
+        isVideo: isVideo,
+        callId
+      });
+
+      publishCallSignalToCloud({
+        type: 'CALL_OFFER',
+        callId,
+        callerId: currentUser.id,
+        callerName: currentUser.displayName,
+        callerUsername: currentUser.username,
+        callerAvatar: currentUser.avatarUrl,
+        targetName: groupTitle,
+        isVideo: Boolean(isVideo),
+        timestamp: Date.now()
       });
     }
   };
@@ -2286,12 +2365,18 @@ export default function App() {
                 onBackMobile={() => setIsMobileChatOpen(false)}
                 onSendMessage={handleSendMessage}
                 onStartCall={(isVideo) => {
+                  const otherMember = selectedChat.members?.find((m) => m.userId !== currentUser.id);
+                  const callId = 'call_' + Date.now();
                   setActiveCallSession({
                     direction: 'outgoing',
                     contactName: selectedChat.title,
                     avatarUrl: selectedChat.avatarUrl,
-                    isVideo
+                    isVideo,
+                    callId,
+                    targetUserId: otherMember?.userId,
+                    targetUsername: otherMember?.username
                   });
+
                   try {
                     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
                       const channel = new BroadcastChannel('applet_webrtc_call_sync');
@@ -2300,11 +2385,29 @@ export default function App() {
                         contactName: currentUser.displayName,
                         avatarUrl: currentUser.avatarUrl,
                         isVideo: Boolean(isVideo),
-                        callId: 'call_' + Date.now()
+                        callId,
+                        callerId: currentUser.id,
+                        callerUsername: currentUser.username,
+                        targetUserId: otherMember?.userId,
+                        targetUsername: otherMember?.username
                       });
                       channel.close();
                     }
                   } catch {}
+
+                  publishCallSignalToCloud({
+                    type: 'CALL_OFFER',
+                    callId,
+                    callerId: currentUser.id,
+                    callerName: currentUser.displayName,
+                    callerUsername: currentUser.username,
+                    callerAvatar: currentUser.avatarUrl,
+                    targetUserId: otherMember?.userId,
+                    targetUsername: otherMember?.username,
+                    targetName: selectedChat.title,
+                    isVideo: Boolean(isVideo),
+                    timestamp: Date.now()
+                  });
                 }}
                 onOpenVideoNoteRecorder={() => setIsVideoNoteRecorderOpen(true)}
                 onCreateTopic={handleCreateTopic}
@@ -2398,11 +2501,29 @@ export default function App() {
             onToggleFollow={handleToggleFollow}
             onStartChatWithUser={handleStartChatWithUser}
             onStartCallWithUser={(usr, isVideo) => {
+              const callId = 'call_' + Date.now();
               setActiveCallSession({
                 direction: 'outgoing',
                 contactName: usr.name,
                 avatarUrl: usr.avatar,
-                isVideo
+                isVideo,
+                callId,
+                targetUserId: usr.id,
+                targetUsername: usr.username
+              });
+
+              publishCallSignalToCloud({
+                type: 'CALL_OFFER',
+                callId,
+                callerId: currentUser.id,
+                callerName: currentUser.displayName,
+                callerUsername: currentUser.username,
+                callerAvatar: currentUser.avatarUrl,
+                targetUserId: usr.id,
+                targetUsername: usr.username,
+                targetName: usr.name,
+                isVideo: Boolean(isVideo),
+                timestamp: Date.now()
               });
             }}
             posts={posts}
