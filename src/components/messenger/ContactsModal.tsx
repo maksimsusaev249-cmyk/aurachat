@@ -30,8 +30,8 @@ export const initialContactsList: ContactItem[] = [
     username: 'durov',
     phone: '+971 50 123 4567',
     avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=DurovAnime&backgroundColor=182533',
-    isOnline: true,
-    statusText: 'в сети'
+    isOnline: false,
+    statusText: 'был(а) 3 мин назад'
   },
   {
     userId: 'usr_elena',
@@ -66,8 +66,8 @@ export const initialContactsList: ContactItem[] = [
     username: 'sofia_live',
     phone: '+7 (999) 111-22-33',
     avatarUrl: 'https://api.dicebear.com/7.x/lorelei/svg?seed=SofiaAnime&backgroundColor=312e81',
-    isOnline: true,
-    statusText: 'в сети'
+    isOnline: false,
+    statusText: 'был(а) 45 минут назад'
   }
 ];
 
@@ -110,17 +110,21 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
     savedAccounts.forEach((acc) => {
       if (currentUserId && acc.id === currentUserId) return;
       const key = acc.username.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          userId: acc.id,
-          displayName: acc.displayName,
-          username: acc.username,
-          phone: acc.phone || acc.email || 'Пользователь AuraChat',
-          avatarUrl: acc.avatarUrl,
-          isOnline: true,
-          statusText: 'зарегистрирован в AuraChat'
-        });
-      }
+      const accIsOnline = acc.hideOnlineStatus
+        ? false
+        : Boolean(acc.isOnline && (acc.lastSeen || 'в сети') === 'в сети');
+      const accStatusText = acc.hideOnlineStatus
+        ? 'был(а) в сети недавно'
+        : acc.lastSeen || (acc.isOnline ? 'в сети' : 'был(а) в сети недавно');
+      map.set(key, {
+        userId: acc.id,
+        displayName: acc.displayName,
+        username: acc.username,
+        phone: acc.phone || acc.email || 'Пользователь AuraChat',
+        avatarUrl: acc.avatarUrl,
+        isOnline: accIsOnline,
+        statusText: accStatusText
+      });
     });
     return Array.from(map.values());
   }, [contacts, savedAccounts, currentUserId]);

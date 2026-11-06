@@ -75,6 +75,14 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
   const [downloadingReelId, setDownloadingReelId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFreshBadge, setShowFreshBadge] = useState(false);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   // TikTok-style Pull-to-Refresh state on the first reel
   const [pullDistance, setPullDistance] = useState(0);
@@ -352,7 +360,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
       userName: 'Александр',
       userAvatar: 'https://api.dicebear.com/7.x/adventurer/svg?seed=AlexNova&backgroundColor=1e293b',
       content: newCommentText.trim(),
-      createdAt: formatSmartTime(new Date()),
+      createdAt: new Date().toISOString(),
       likesCount: 0
     };
     onAddComment?.(reelId, newComment);
@@ -736,7 +744,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                     </button>
 
                     <span className="text-[11px] text-white/75 font-medium">
-                      • {formatSmartTime(reel.createdAt)}
+                      • {formatSmartTime(reel.createdAt, reel.id, nowTick)}
                     </span>
 
                     <button
@@ -812,7 +820,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                                 <span className="font-semibold text-[#71aaeb] text-xs">{c.userName}</span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt)}</span>
+                                <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt, c.id, nowTick)}</span>
                                 <button 
                                   onClick={() => handleShareComment(c.id)}
                                   className="p-1 rounded hover:bg-[#2c2d2e] text-[#828282] hover:text-white transition cursor-pointer"

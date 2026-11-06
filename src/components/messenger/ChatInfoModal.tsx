@@ -264,7 +264,9 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
             </h2>
 
             <p className="text-xs text-slate-400 mt-0.5">
-              {chat.type === 'direct' ? (
+              {chat.type === 'saved' ? (
+                <span className="text-[#64b5f6] font-semibold">1 человек • личное хранилище</span>
+              ) : chat.type === 'direct' ? (
                 <span className="text-emerald-400 font-semibold">в сети</span>
               ) : (
                 <span>{chat.membersCount} {chat.type === 'channel' ? 'подписчиков' : 'участников'}</span>

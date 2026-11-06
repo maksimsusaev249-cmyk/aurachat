@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
+import { formatSmartTime } from '../../utils/dateUtils';
 import { ViewTargetUser } from './OtherUserProfileModal';
 
 interface CommunityViewModalProps {
@@ -184,6 +185,14 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   // Community wall post comments input state
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [commentMedia, setCommentMedia] = useState<Record<string, { url: string; type: 'image' | 'gif' } | null>>({});
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleAddCommunityComment = (postId: string) => {
     const text = (commentInputs[postId] || '').trim();
@@ -199,7 +208,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
       content: text || 'Фотография',
       mediaUrl: attached?.url,
       mediaType: attached?.type,
-      createdAt: 'Только что',
+      createdAt: new Date().toISOString(),
       likesCount: 0
     };
 
@@ -1325,7 +1334,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                                     <div className="text-[13px] font-semibold text-[#e1e3e6] group-hover:text-[#71aaeb] truncate">
                                       {post.userName}
                                     </div>
-                                    <div className="text-xs text-[#828282]">{post.createdAt}</div>
+                                    <div className="text-xs text-[#828282]">{formatSmartTime(post.createdAt, post.id, nowTick)}</div>
                                   </div>
                                 </div>
 

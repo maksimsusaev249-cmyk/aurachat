@@ -47,7 +47,7 @@ import { SettingsTab } from './components/messenger/SettingsModal';
 import { GlobalSearchModal } from './components/messenger/GlobalSearchModal';
 import { playReactionSound, playSentSound, playNotificationSound } from './utils/audioUtils';
 import { isVideoMedia } from './utils/mediaUtils';
-import { formatSmartTime, getCurrentFormattedTime } from './utils/dateUtils';
+import { formatSmartTime, getCurrentFormattedTime, normalizeCreatedAtIso } from './utils/dateUtils';
 import { 
   syncAccountToCloud, 
   savePlatformStateToCloud, 
@@ -97,6 +97,30 @@ export default function App() {
   });
 
   const [chats, setChats] = useState<Chat[]>(() => {
+    const sanitizeChats = (list: Chat[]): Chat[] => {
+      const seenIds = new Set<string>();
+      const seenDirectTitles = new Set<string>();
+      return list.filter((c) => {
+        if (!c || !c.id) return false;
+        if (seenIds.has(c.id)) return false;
+        if (c.type === 'direct') {
+          const key = (c.title || '').trim().toLowerCase();
+          if (key && seenDirectTitles.has(key)) return false;
+          if (key) seenDirectTitles.add(key);
+        }
+        seenIds.add(c.id);
+        return true;
+      }).map((c) =>
+        c.type === 'saved'
+          ? {
+              ...c,
+              membersCount: 1,
+              unreadCount: 0,
+              members: c.members?.slice(0, 1) || []
+            }
+          : c
+      );
+    };
     try {
       const savedMapRaw = localStorage.getItem('aurachat_userChatsMap_v2');
       const savedUserRaw = localStorage.getItem('aurachat_currentUser');
@@ -104,16 +128,16 @@ export default function App() {
       if (savedMapRaw) {
         const parsedMap = JSON.parse(savedMapRaw);
         if (parsedMap[activeUid] && parsedMap[activeUid].length > 0) {
-          return parsedMap[activeUid];
+          return sanitizeChats(parsedMap[activeUid]);
         }
       }
       const saved = localStorage.getItem('aurachat_active_chats_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeChats(parsed);
       }
     } catch (e) {}
-    return initialChats;
+    return sanitizeChats(initialChats);
   });
   const [globalCatalogChats, setGlobalCatalogChats] = useState<Chat[]>(() => {
     try {
@@ -122,14 +146,44 @@ export default function App() {
     } catch (e) {}
     return initialChats;
   });
-  const [selectedChat, setSelectedChat] = useState<Chat>(() => chats[0] || initialChats[0]);
+  const [selectedChat, setSelectedChat] = useState<Chat>(() => {
+    const first = chats[0] || initialChats[0];
+    return first ? { ...first, unreadCount: 0 } : first;
+  });
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [onlinePeerMap, setOnlinePeerMap] = useState<Record<string, number>>({});
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>(() => {
+    const dedupeMap = (raw: Record<string, Message[]>): Record<string, Message[]> => {
+      const clean: Record<string, Message[]> = {};
+      Object.keys(raw || {}).forEach((chatId) => {
+        const list = Array.isArray(raw[chatId]) ? raw[chatId] : [];
+        const seenIds = new Set<string>();
+        const deduped: Message[] = [];
+        list.forEach((m, idx) => {
+          if (!m) return;
+          const safeId = m.id && !seenIds.has(m.id) ? m.id : `${m.id || 'msg'}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+          seenIds.add(safeId);
+          // Avoid consecutive duplicate identical messages created at the exact same moment
+          const prevMsg = deduped[deduped.length - 1];
+          if (
+            prevMsg &&
+            prevMsg.senderId === m.senderId &&
+            prevMsg.content === m.content &&
+            prevMsg.createdAt === m.createdAt
+          ) {
+            return;
+          }
+          deduped.push({ ...m, id: safeId });
+        });
+        clean[chatId] = deduped;
+      });
+      return clean;
+    };
     try {
       const saved = localStorage.getItem('aurachat_messagesMap_v2');
-      if (saved) return JSON.parse(saved);
+      if (saved) return dedupeMap(JSON.parse(saved));
     } catch (e) {}
-    return initialMessages;
+    return dedupeMap(initialMessages);
   });
   const [stories, setStories] = useState<Story[]>(() => {
     try {
@@ -164,6 +218,7 @@ export default function App() {
           .filter((r) => r.mediaUrl && !r.mediaUrl.startsWith('blob:'))
           .map((r) => ({
             ...r,
+            createdAt: normalizeCreatedAtIso(r.createdAt, r.id),
             mediaType: isVideoMedia(r.mediaUrl, r.mediaType) ? 'video' : 'image'
           }));
       }
@@ -179,6 +234,7 @@ export default function App() {
           .filter((p) => !p.mediaUrl || !p.mediaUrl.startsWith('blob:'))
           .map((p) => ({
             ...p,
+            createdAt: normalizeCreatedAtIso(p.createdAt, p.id),
             mediaType: !p.mediaUrl
               ? 'text'
               : isVideoMedia(p.mediaUrl, p.mediaType)
@@ -493,8 +549,58 @@ export default function App() {
   // 6-Digit PIN Prompt state for switching accounts or logging in
   const [pinPromptTargetUser, setPinPromptTargetUser] = useState<User | null>(null);
 
-  // Switch Account Handler
+  // Broadcast a user's presence / status update so all tabs and users immediately see it
+  const broadcastUserPresence = (userToBroadcast: User) => {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({
+          type: 'USER_PRESENCE_UPDATE',
+          user: userToBroadcast
+        });
+        ch.close();
+      }
+      if (!isFirestoreQuotaExceeded()) {
+        syncAccountToCloud(userToBroadcast);
+      }
+    } catch {}
+  };
+
+  // Switch Account Handler:
+  // - Exiting account gets "был(а) только что в сети" (if in auto mode)
+  // - Entering account automatically gets "в сети" (even if it previously had "был(а) в сети недавно")
   const handleSwitchUser = (targetUser: User) => {
+    const nowMs = Date.now();
+    const prevMode = (currentUser.settings as any)?.presenceMode || 'auto';
+    const exitingUser: User =
+      prevMode === 'manual' || currentUser.hideOnlineStatus
+        ? currentUser
+        : {
+            ...currentUser,
+            isOnline: false,
+            lastSeen: 'был(а) только что в сети',
+            settings: {
+              ...currentUser.settings,
+              presenceMode: 'auto',
+              offlineAt: nowMs
+            } as any
+          };
+
+    const targetMode = (targetUser.settings as any)?.presenceMode || 'auto';
+    const enteringUser: User =
+      targetMode === 'manual' || targetUser.hideOnlineStatus
+        ? targetUser
+        : {
+            ...targetUser,
+            isOnline: true,
+            lastSeen: 'в сети',
+            settings: {
+              ...targetUser.settings,
+              presenceMode: 'auto',
+              offlineAt: undefined
+            } as any
+          };
+
     // 1. Save current account's chats and calls into maps
     setUserChatsMap((prev) => ({
       ...prev,
@@ -505,14 +611,27 @@ export default function App() {
       [currentUser.id]: calls
     }));
 
-    setCurrentUser(targetUser);
-    setLastLoggedUser(targetUser);
+    setSavedAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id === exitingUser.id) return exitingUser;
+        if (acc.id === enteringUser.id) return enteringUser;
+        return acc;
+      })
+    );
+
+    if (exitingUser.id !== enteringUser.id) {
+      broadcastUserPresence(exitingUser);
+    }
+    broadcastUserPresence(enteringUser);
+
+    setCurrentUser(enteringUser);
+    setLastLoggedUser(enteringUser);
 
     // 2. Load target user's chats (if new account -> only [savedChat]) and calls (if new account -> [])
-    const targetChats = userChatsMap[targetUser.id] || [createSavedMessagesChat(targetUser)];
+    const targetChats = userChatsMap[enteringUser.id] || [createSavedMessagesChat(enteringUser)];
     setChats(targetChats);
-    setSelectedChat(targetChats[0]);
-    const targetCalls = (userCallsMap[targetUser.id] || []).filter(
+    setSelectedChat({ ...targetChats[0], unreadCount: 0 });
+    const targetCalls = (userCallsMap[enteringUser.id] || []).filter(
       (c) => c.id !== 'call_1' && c.id !== 'call_2' && c.id !== 'call_3'
     );
     setCalls(targetCalls);
@@ -520,7 +639,24 @@ export default function App() {
   };
 
   // Complete Logout Handler ("надо полностью выйти из аккаунта")
+  // When user exits the social network, status automatically becomes "был(а) только что в сети"
   const handleLogout = (forgetAccount: boolean = false) => {
+    const nowMs = Date.now();
+    const curMode = (currentUser.settings as any)?.presenceMode || 'auto';
+    const loggedOutUser: User =
+      curMode === 'manual' || currentUser.hideOnlineStatus
+        ? currentUser
+        : {
+            ...currentUser,
+            isOnline: false,
+            lastSeen: 'был(а) только что в сети',
+            settings: {
+              ...currentUser.settings,
+              presenceMode: 'auto',
+              offlineAt: nowMs
+            } as any
+          };
+
     // 1. Save current account chats
     setUserChatsMap((prev) => ({
       ...prev,
@@ -531,7 +667,12 @@ export default function App() {
       setSavedAccounts((prev) => prev.filter((a) => a.id !== currentUser.id));
       setLastLoggedUser(null);
     } else {
-      setLastLoggedUser(currentUser);
+      setCurrentUser(loggedOutUser);
+      setLastLoggedUser(loggedOutUser);
+      setSavedAccounts((prev) =>
+        prev.map((a) => (a.id === loggedOutUser.id ? loggedOutUser : a))
+      );
+      broadcastUserPresence(loggedOutUser);
     }
 
     // 2. Mark completely logged out
@@ -915,7 +1056,12 @@ export default function App() {
       if (Array.isArray(cloudPosts) && cloudPosts.length > 0) {
         setPosts((prev) => {
           const map = new Map(prev.map((p) => [p.id, p]));
-          cloudPosts.forEach((p: Post) => map.set(p.id, p));
+          cloudPosts.forEach((p: Post) =>
+            map.set(p.id, {
+              ...p,
+              createdAt: normalizeCreatedAtIso(p.createdAt, p.id)
+            })
+          );
           return Array.from(map.values());
         });
       }
@@ -923,7 +1069,12 @@ export default function App() {
       if (Array.isArray(cloudReels) && cloudReels.length > 0) {
         setReels((prev) => {
           const map = new Map(prev.map((r) => [r.id, r]));
-          cloudReels.forEach((r: Post) => map.set(r.id, r));
+          cloudReels.forEach((r: Post) =>
+            map.set(r.id, {
+              ...r,
+              createdAt: normalizeCreatedAtIso(r.createdAt, r.id)
+            })
+          );
           return Array.from(map.values());
         });
       }
@@ -945,9 +1096,16 @@ export default function App() {
             if (Array.isArray(remoteMsgs) && remoteMsgs.length > 0) {
               const existingMsgs = updated[chatId] || [];
               const map = new Map(existingMsgs.map((m) => [m.id, m]));
-              remoteMsgs.forEach((m: Message) => map.set(m.id, m));
+              remoteMsgs.forEach((m: Message) => {
+                if (!m || !m.id) return;
+                const prevItem = map.get(m.id);
+                if (!prevItem || (prevItem.status !== 'read' && m.status === 'read')) {
+                  map.set(m.id, prevItem ? { ...prevItem, ...m, status: m.status } : m);
+                  changed = true;
+                }
+              });
               const merged = Array.from(map.values());
-              if (merged.length !== existingMsgs.length) {
+              if (merged.length !== existingMsgs.length || changed) {
                 updated[chatId] = merged;
                 changed = true;
               }
@@ -1172,26 +1330,84 @@ export default function App() {
         return;
       }
 
+      if (data.type === 'USER_PRESENCE_UPDATE' && data.user) {
+        const updatedPeer: User = data.user;
+        setSavedAccounts((prev) => {
+          const exists = prev.some((u) => u.id === updatedPeer.id);
+          if (!exists) return [...prev, updatedPeer];
+          return prev.map((u) => (u.id === updatedPeer.id ? { ...u, ...updatedPeer } : u));
+        });
+        if (updatedPeer.id === currentUser.id) {
+          setCurrentUser((prev) => ({ ...prev, ...updatedPeer }));
+        }
+        return;
+      }
+
+      if (data.type === 'CHAT_READ_AND_ONLINE' && data.chatId) {
+        if (data.readerId && data.readerId !== currentUser.id) {
+          setOnlinePeerMap((prev) => ({
+            ...prev,
+            [data.chatId]: data.timestamp || Date.now()
+          }));
+          setMessagesMap((prev) => {
+            const list = prev[data.chatId] || [];
+            if (!list.some((m) => m.senderId === currentUser.id && m.status !== 'read')) {
+              return prev;
+            }
+            return {
+              ...prev,
+              [data.chatId]: list.map((m) =>
+                m.senderId === currentUser.id ? { ...m, status: 'read' } : m
+              )
+            };
+          });
+        }
+        return;
+      }
+
       if (data.type !== 'NEW_CHAT_MESSAGE' || !data.message) return;
 
       const incomingMsg: Message = data.message;
       const isFromOthers = incomingMsg.senderId !== currentUser.id;
+      const isCurrentlyOpen = selectedChat.id === data.chatId;
+
+      if (isFromOthers) {
+        setOnlinePeerMap((prev) => ({
+          ...prev,
+          [data.chatId]: Date.now()
+        }));
+      }
 
       setMessagesMap((prev) => {
         const list = prev[data.chatId] || [];
         if (list.some((m) => m.id === incomingMsg.id)) return prev;
+        const msgToStore: Message = isCurrentlyOpen && isFromOthers
+          ? { ...incomingMsg, status: 'read' }
+          : incomingMsg;
         return {
           ...prev,
-          [data.chatId]: [...list, incomingMsg]
+          [data.chatId]: [...list, msgToStore]
         };
       });
+
+      if (isCurrentlyOpen && isFromOthers) {
+        try {
+          const readCh = new BroadcastChannel('aurachat_live_messages_sync');
+          readCh.postMessage({
+            type: 'CHAT_READ_AND_ONLINE',
+            chatId: data.chatId,
+            readerId: currentUser.id,
+            timestamp: Date.now()
+          });
+          readCh.close();
+        } catch {}
+      }
 
       setChats((prev) => {
         const exists = prev.some((c) => c.id === data.chatId);
         if (exists) {
           return prev.map((c) => {
             if (c.id !== data.chatId) return c;
-            const isCurrentlyOpen = selectedChat.id === data.chatId;
             const nextUnread = isFromOthers && !isCurrentlyOpen ? (c.unreadCount || 0) + 1 : 0;
             return {
               ...c,
@@ -1210,7 +1426,7 @@ export default function App() {
           isPrivate: true,
           lastMessage: incomingMsg.content || 'Сообщение',
           lastMessageTime: formatSmartTime(incomingMsg.createdAt || new Date()),
-          unreadCount: isFromOthers ? 1 : 0,
+          unreadCount: isFromOthers && !isCurrentlyOpen ? 1 : 0,
           membersCount: 2,
           members: [
             {
@@ -1226,14 +1442,56 @@ export default function App() {
       });
 
       // Play soft notification sound
-      playNotificationSound(incomingMsg.senderName, incomingMsg.content);
+      if (isFromOthers) {
+        playNotificationSound(incomingMsg.senderName, incomingMsg.content);
+      }
     };
 
     return () => {
       channel.close();
       msgChannel.close();
     };
-  }, []);
+  }, [currentUser.id, selectedChat.id]);
+
+  // When user enters / selects a chat:
+  // 1) Immediately clear unread counter (unreadCount: 0) so the badge disappears
+  // 2) Mark incoming messages in this chat as read ('read')
+  // 3) Notify sender via BroadcastChannel that we entered the chat and read the messages (2 checkmarks + online)
+  useEffect(() => {
+    if (!selectedChat?.id) return;
+    const activeId = selectedChat.id;
+
+    setChats((prev) => {
+      const target = prev.find((c) => c.id === activeId);
+      if (!target || !target.unreadCount) return prev;
+      return prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c));
+    });
+
+    setMessagesMap((prev) => {
+      const list = prev[activeId] || [];
+      const hasUnreadFromOthers = list.some((m) => m.senderId !== currentUser.id && m.status !== 'read');
+      if (!hasUnreadFromOthers) return prev;
+      return {
+        ...prev,
+        [activeId]: list.map((m) =>
+          m.senderId !== currentUser.id ? { ...m, status: 'read' } : m
+        )
+      };
+    });
+
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({
+          type: 'CHAT_READ_AND_ONLINE',
+          chatId: activeId,
+          readerId: currentUser.id,
+          timestamp: Date.now()
+        });
+        ch.close();
+      }
+    } catch {}
+  }, [selectedChat.id, currentUser.id]);
 
   // User Follow / Subscription State
   const [followingUserIds, setFollowingUserIds] = useState<Record<string, boolean>>({
@@ -1259,7 +1517,7 @@ export default function App() {
     setSelectedOtherUser(null);
     if (user.id === currentUser.id) {
       const savedChat = chats.find((c) => c.type === 'saved') || chats[0];
-      setSelectedChat(savedChat);
+      setSelectedChat({ ...savedChat, unreadCount: 0 });
       setIsMobileChatOpen(true);
       setActiveScreen('chats');
       return;
@@ -1267,11 +1525,12 @@ export default function App() {
     let targetChat = chats.find(c => c.type === 'direct' && c.members.some(m => m.userId === user.id || m.username === user.username));
     if (!targetChat) {
       targetChat = {
-        id: 'chat_' + Date.now(),
+        id: 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         type: 'direct',
         title: user.name,
         avatarUrl: user.avatar,
         isPrivate: true,
+        unreadCount: 0,
         membersCount: 2,
         members: [
           { userId: currentUser.id, displayName: currentUser.displayName, username: currentUser.username, avatarUrl: currentUser.avatarUrl, role: 'owner' },
@@ -1280,7 +1539,7 @@ export default function App() {
       };
       setChats((prev) => [targetChat!, ...prev]);
     }
-    setSelectedChat(targetChat);
+    setSelectedChat({ ...targetChat, unreadCount: 0 });
     setIsMobileChatOpen(true);
     setActiveScreen('chats');
   };
@@ -1337,21 +1596,21 @@ export default function App() {
         ...prev,
         [commChatId]: [
           {
-            id: 'msg_comm_welcome_' + Date.now(),
+            id: 'msg_comm_welcome_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
             chatId: commChatId,
             senderId: comm.ownerId,
             senderName: `${ownerName} (Владелец «${comm.title}»)`,
             senderAvatar: ownerAvatar,
             type: 'text',
             content: `👋 Здравствуйте! Вы перешли в чат сообщества «${comm.title}». Здесь вы общаетесь напрямую с владельцем этого сообщества (${ownerName}). Напишите ваш вопрос или предложение!`,
-            createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            createdAt: new Date().toISOString(),
             status: 'read'
           }
         ]
       };
     });
 
-    setSelectedChat(targetChat);
+    setSelectedChat({ ...targetChat, unreadCount: 0 });
     setIsMobileChatOpen(true);
     setActiveScreen('chats');
   };
@@ -1367,8 +1626,12 @@ export default function App() {
     senderOverride?: { id: string; name: string; avatar: string }
   ) => {
     const activeChatId = selectedChat.id;
+    const isPeerCurrentlyOnline = Boolean(
+      onlinePeerMap[activeChatId] && Date.now() - onlinePeerMap[activeChatId] < 120000
+    );
+    const uniqueMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
     const newMsg: Message = {
-      id: 'msg_' + Date.now(),
+      id: uniqueMsgId,
       chatId: activeChatId,
       senderId: senderOverride ? senderOverride.id : currentUser.id,
       senderName: senderOverride ? senderOverride.name : currentUser.displayName,
@@ -1377,26 +1640,39 @@ export default function App() {
       content: content || (type === 'voice' ? 'Голосовое сообщение' : 'Круглое видеосообщение'),
       mediaUrl: mediaUrl,
       mediaMeta: meta,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: senderOverride ? 'read' : 'sent'
+      createdAt: new Date().toISOString(),
+      // 1 checkmark ('sent') until recipient enters the chat; 2 checkmarks ('read') if in Saved Messages or peer is actively in chat
+      status: senderOverride || selectedChat.type === 'saved' || isPeerCurrentlyOnline ? 'read' : 'sent'
     };
+
+    if (senderOverride) {
+      // Interlocutor entered chat and replied -> mark interlocutor online and mark previous outgoing messages as read (2 checkmarks)
+      setOnlinePeerMap((prev) => ({
+        ...prev,
+        [activeChatId]: Date.now()
+      }));
+    }
 
     setMessagesMap((prev) => {
       const chatMsgs = prev[activeChatId] || [];
+      if (chatMsgs.some((m) => m.id === newMsg.id)) return prev;
+      const updatedExisting = senderOverride
+        ? chatMsgs.map((m) => (m.senderId === currentUser.id ? { ...m, status: 'read' as const } : m))
+        : chatMsgs;
       return {
         ...prev,
-        [activeChatId]: [...chatMsgs, newMsg]
+        [activeChatId]: [...updatedExisting, newMsg]
       };
     });
 
-    // Update last message in chat preview
+    // Update last message in chat preview & keep unreadCount at 0 for active chat
     setChats((prev) =>
       prev.map((c) =>
         c.id === activeChatId
           ? {
               ...c,
               lastMessage: type === 'video_note' ? '📹 Кружочек' : type === 'voice' ? '🎤 Голосовое сообщение' : content,
-              lastMessageTime: formatSmartTime(new Date()),
+              lastMessageTime: new Date().toISOString(),
               unreadCount: 0
             }
           : c
@@ -1432,12 +1708,125 @@ export default function App() {
   const handleUpdateUser = (updated: Partial<User>) => {
     setCurrentUser((prev) => {
       const next = { ...prev, ...updated };
-      setSavedAccounts((accs) =>
-        accs.map((a) => (a.id === prev.id ? next : a))
-      );
+      setSavedAccounts((accs) => {
+        const exists = accs.some((a) => a.id === prev.id);
+        return exists ? accs.map((a) => (a.id === prev.id ? next : a)) : [...accs, next];
+      });
+      broadcastUserPresence(next);
       return next;
     });
   };
+
+  // Automatic Social Network Enter / Exit Status Lifecycle:
+  // - When user enters / focuses the social network -> automatically becomes "в сети" (even if previously "был в сети недавно" or "был только что в сети")
+  // - When user exits / hides the social network -> automatically becomes "был(а) только что в сети", then transitions to "был(а) 1 мин назад" -> "был(а) в сети недавно"
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser?.id) return;
+
+    const markUserEnteredOnline = () => {
+      setCurrentUser((prev) => {
+        const mode = (prev.settings as any)?.presenceMode || 'auto';
+        if (mode === 'manual' || prev.hideOnlineStatus) return prev;
+        if (prev.isOnline === true && prev.lastSeen === 'в сети' && !(prev.settings as any)?.offlineAt) {
+          return prev;
+        }
+        const enteredUser: User = {
+          ...prev,
+          isOnline: true,
+          lastSeen: 'в сети',
+          settings: {
+            ...prev.settings,
+            presenceMode: 'auto',
+            offlineAt: undefined
+          } as any
+        };
+        setSavedAccounts((accs) =>
+          accs.map((a) => (a.id === enteredUser.id ? enteredUser : a))
+        );
+        broadcastUserPresence(enteredUser);
+        return enteredUser;
+      });
+    };
+
+    const markUserExitedOffline = () => {
+      setCurrentUser((prev) => {
+        const mode = (prev.settings as any)?.presenceMode || 'auto';
+        if (mode === 'manual' || prev.hideOnlineStatus) return prev;
+        const nowMs = Date.now();
+        const exitedUser: User = {
+          ...prev,
+          isOnline: false,
+          lastSeen: 'был(а) только что в сети',
+          settings: {
+            ...prev.settings,
+            presenceMode: 'auto',
+            offlineAt: nowMs
+          } as any
+        };
+        setSavedAccounts((accs) => {
+          const nextAccs = accs.map((a) => (a.id === exitedUser.id ? exitedUser : a));
+          try {
+            localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(nextAccs));
+            localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(exitedUser));
+          } catch {}
+          return nextAccs;
+        });
+        broadcastUserPresence(exitedUser);
+        return exitedUser;
+      });
+    };
+
+    // Immediately upon entering the social network while logged in -> ensure status is "в сети"
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      markUserEnteredOnline();
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        markUserEnteredOnline();
+      } else {
+        markUserExitedOffline();
+      }
+    };
+
+    const handleWindowFocus = () => markUserEnteredOnline();
+    const handlePageHide = () => markUserExitedOffline();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
+
+    // Every 30 seconds, age offline accounts from "был(а) только что в сети" -> "был(а) 1 мин назад" -> "был(а) в сети недавно"
+    const agingTimer = setInterval(() => {
+      setSavedAccounts((prevAccs) =>
+        prevAccs.map((acc) => {
+          if (acc.id === currentUser.id && document.visibilityState === 'visible') return acc;
+          const mode = (acc.settings as any)?.presenceMode || 'auto';
+          const offlineAt = (acc.settings as any)?.offlineAt;
+          if (mode === 'manual' || acc.hideOnlineStatus || acc.isOnline || !offlineAt) return acc;
+          const diffSec = Math.floor((Date.now() - offlineAt) / 1000);
+          const diffMin = Math.floor(diffSec / 60);
+          const nextLastSeen =
+            diffSec < 90
+              ? 'был(а) только что в сети'
+              : diffMin <= 5
+                ? `был(а) ${diffMin} мин назад`
+                : 'был(а) в сети недавно';
+          if (acc.lastSeen === nextLastSeen) return acc;
+          return { ...acc, lastSeen: nextLastSeen };
+        })
+      );
+    }, 30000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handlePageHide);
+      clearInterval(agingTimer);
+    };
+  }, [isLoggedIn, currentUser.id]);
 
   // Studio Publish Handlers
   const handlePublishReel = (rawReel: Post) => {
@@ -1446,7 +1835,7 @@ export default function App() {
       userId: rawReel.userId || currentUser.id,
       userName: rawReel.userName || currentUser.displayName,
       userAvatar: rawReel.userAvatar || currentUser.avatarUrl,
-      createdAt: rawReel.createdAt || formatSmartTime(new Date()),
+      createdAt: normalizeCreatedAtIso(rawReel.createdAt, rawReel.id),
       viewsCount: rawReel.viewsCount ?? 1
     };
 
@@ -1483,7 +1872,7 @@ export default function App() {
       userId: rawPost.userId || currentUser.id,
       userName: rawPost.userName || currentUser.displayName,
       userAvatar: rawPost.userAvatar || currentUser.avatarUrl,
-      createdAt: rawPost.createdAt || formatSmartTime(new Date()),
+      createdAt: normalizeCreatedAtIso(rawPost.createdAt, rawPost.id),
       viewsCount: rawPost.viewsCount ?? 1
     };
 
@@ -2056,22 +2445,22 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-full max-w-[100vw] bg-[#141414] text-[#e1e3e6] flex flex-col overflow-hidden font-sans select-none">
-      {/* Offline / Quota Notice Banner */}
+    <div className="h-[100dvh] w-full max-w-[100vw] bg-[#141414] text-[#e1e3e6] flex flex-col overflow-hidden font-sans select-none pt-[env(safe-area-inset-top,0px)]">
+      {/* Offline / Quota Notice Banner — Compact & Safe on Mobile */}
       {isQuotaExceededState && !isQuotaBannerDismissed && (
         <div className="bg-[#1f1a0e] border-b border-amber-600/40 text-amber-200 px-3 py-1.5 text-xs flex items-center justify-between gap-2 z-40 shrink-0">
-          <div className="flex items-center gap-2 truncate text-[11px] sm:text-xs">
+          <div className="flex items-center gap-2 min-w-0 flex-1 text-[11px] sm:text-xs">
             <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 animate-pulse" />
             <span className="truncate">
-              AuraChat работает в локальном режиме (данные сохраняются в браузере). Для облачной синхронизации подключите тариф в Firebase:
+              AuraChat: локальный режим (квота облака исчерпана).
             </span>
             <a
               href="https://console.firebase.google.com/project/gen-lang-client-0852394880/firestore/databases/ai-studio-telegrammhybridm-0a97c053-a08d-487b-81be-fc2833f735e6/data?openUpgradeDialog=true"
               target="_blank"
               rel="noreferrer"
-              className="text-[#71aaeb] hover:underline font-semibold shrink-0 inline-flex items-center gap-1"
+              className="text-[#71aaeb] hover:underline font-semibold shrink-0 inline-flex items-center gap-1 hidden xs:inline-flex"
             >
-              Firebase Console <ExternalLink className="w-3 h-3" />
+              Консоль <ExternalLink className="w-3 h-3" />
             </a>
           </div>
           <button
@@ -2256,9 +2645,15 @@ export default function App() {
             <TelegramSidebar
               chats={chats}
               selectedChatId={selectedChat.id}
+              messagesMap={messagesMap}
+              onlinePeerMap={onlinePeerMap}
               isMobileChatOpen={isMobileChatOpen}
               onSelectChat={(c) => {
-                setSelectedChat(c);
+                const cleanChat = { ...c, unreadCount: 0 };
+                setSelectedChat(cleanChat);
+                setChats((prev) =>
+                  prev.map((item) => (item.id === c.id ? { ...item, unreadCount: 0 } : item))
+                );
                 setIsMobileChatOpen(true);
               }}
               stories={stories}
@@ -2299,17 +2694,20 @@ export default function App() {
                       ))
                 );
                 if (existing) {
-                  setSelectedChat(existing);
+                  setSelectedChat({ ...existing, unreadCount: 0 });
+                  setChats((prev) =>
+                    prev.map((item) => (item.id === existing.id ? { ...item, unreadCount: 0 } : item))
+                  );
                 } else {
                   const newDirectChat: Chat = {
-                    id: 'chat_' + Date.now(),
+                    id: 'chat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
                     type: 'direct',
                     title: target.displayName,
                     avatarUrl: target.avatarUrl,
                     isPrivate: true,
                     membersCount: 2,
                     lastMessage: `Диалог с @${target.username}`,
-                    lastMessageTime: 'Только что',
+                    lastMessageTime: new Date().toISOString(),
                     unreadCount: 0,
                     members: [
                       {
@@ -2344,7 +2742,7 @@ export default function App() {
                   setUserChatsMap((m) => ({ ...m, [currentUser.id]: updated }));
                   return updated;
                 });
-                setSelectedChat(globalChat);
+                setSelectedChat({ ...globalChat, unreadCount: 0 });
                 setIsMobileChatOpen(true);
               }}
               onSelectCommunity={(comm) => {
@@ -2362,6 +2760,8 @@ export default function App() {
                 chat={selectedChat}
                 messages={messagesMap[selectedChat.id] || []}
                 currentUser={currentUser}
+                savedAccounts={savedAccounts}
+                onlinePeerMap={onlinePeerMap}
                 onBackMobile={() => setIsMobileChatOpen(false)}
                 onSendMessage={handleSendMessage}
                 onStartCall={(isVideo) => {
@@ -2496,6 +2896,7 @@ export default function App() {
         {activeScreen === 'profile' && (
           <UserProfileView
             currentUser={currentUser}
+            savedAccounts={savedAccounts}
             targetUser={selectedOtherUser}
             isFollowing={selectedOtherUser ? !!followingUserIds[selectedOtherUser.id] : false}
             onToggleFollow={handleToggleFollow}
@@ -2560,7 +2961,7 @@ export default function App() {
       </div>
 
       {/* Mobile Bottom Navigation Bar — Exactly 5 Buttons: Новости, Клипы, Чаты, Ещё (внутри Группы и сервисы), Профиль */}
-      <div className="sm:hidden px-2 py-1.5 bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0">
+      <div className="sm:hidden px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))] bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0">
         {/* 1. Новости */}
         <button
           onClick={() => handleOpenPostsFeed('all')}

@@ -966,7 +966,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div>
                     <h4 className="font-bold text-sm sm:text-base text-white">{displayName}</h4>
                     <p className="text-slate-400 font-mono text-xs">@{username}</p>
-                    <p className="text-[11px] text-emerald-400 mt-0.5">В сети • AuraChat Cloud</p>
+                    <p className={`text-[11px] mt-0.5 flex items-center gap-1.5 font-medium ${
+                      user.isOnline !== false && !user.hideOnlineStatus ? 'text-emerald-400' : 'text-slate-400'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        user.isOnline !== false && !user.hideOnlineStatus ? 'bg-emerald-400' : 'bg-slate-500'
+                      }`} />
+                      <span>{user.hideOnlineStatus ? 'Невидимка (был(а) в сети недавно)' : (user.lastSeen || 'в сети')}</span>
+                    </p>
                   </div>
                 </div>
 
@@ -978,6 +985,109 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Camera className="w-4 h-4" />
                   <span>Изменить аватарку</span>
                 </button>
+              </div>
+
+              {/* ВЫБОР И АВТОМАТИЧЕСКАЯ РАБОТА СТАТУСА В СЕТИ (Видят все пользователи) */}
+              <div className="p-3.5 rounded-2xl bg-[#1e2a38] border border-[#283748] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span>Мой статус в соцсети (видят все пользователи):</span>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-[#131c26] text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${
+                      user.isOnline !== false && !user.hideOnlineStatus ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
+                    }`} />
+                    <span>
+                      Сейчас у всех: {user.hideOnlineStatus ? 'был(а) в сети недавно (Невидимка)' : (user.lastSeen || 'в сети')}
+                    </span>
+                  </span>
+                </div>
+
+                {/* Автоматический режим работы при входе и выходе */}
+                <div className="p-2.5 rounded-xl bg-[#131c26] border border-emerald-500/30 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-bold text-[11px] text-emerald-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Автоматический режим статуса (Вход / Выход из соцсети)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playSentSound();
+                        onUpdateUser({
+                          isOnline: true,
+                          lastSeen: 'в сети',
+                          hideOnlineStatus: false,
+                          settings: {
+                            ...user.settings,
+                            presenceMode: 'auto',
+                            offlineAt: undefined
+                          } as any
+                        });
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                        (user.settings as any)?.presenceMode !== 'manual' && !user.hideOnlineStatus
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'bg-[#1e2a38] text-slate-300 hover:text-white border border-[#283748]'
+                      }`}
+                    >
+                      {(user.settings as any)?.presenceMode !== 'manual' && !user.hideOnlineStatus
+                        ? '✓ Работает автоматически'
+                        : 'Включить авто-режим'}
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed space-y-0.5">
+                    <div>• Если вы зашли в соцсеть (даже если было «был недавно») → у всех сразу: <span className="text-emerald-400 font-semibold">«в сети»</span></div>
+                    <div>• Как только вы вышли из соцсети → у всех пишет: <span className="text-amber-300 font-semibold">«был(а) только что в сети»</span></div>
+                    <div>• Через несколько минут после выхода → <span className="text-slate-300 font-semibold">«был(а) 1 мин назад» → «был(а) в сети недавно»</span></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { label: '⚡ Авто (В сети при входе)', status: 'в сети', isOnline: true, ghost: false, mode: 'auto' },
+                    { label: '🟢 В сети', status: 'в сети', isOnline: true, ghost: false, mode: 'manual' },
+                    { label: '🕒 Был(а) только что в сети', status: 'был(а) только что в сети', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '🕒 Был(а) в сети недавно', status: 'был(а) в сети недавно', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '⏱️ Был(а) 1 мин назад', status: 'был(а) 1 мин назад', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '👻 Невидимка (скрыт)', status: 'был(а) в сети недавно', isOnline: false, ghost: true, mode: 'manual' }
+                  ].map((item) => {
+                    const currentMode = (user.settings as any)?.presenceMode || 'auto';
+                    const isActive = item.ghost
+                      ? Boolean(user.hideOnlineStatus)
+                      : item.mode === 'auto'
+                        ? currentMode === 'auto' && !user.hideOnlineStatus
+                        : currentMode === 'manual' && !user.hideOnlineStatus && (user.lastSeen || 'в сети') === item.status;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => {
+                          playSentSound();
+                          onUpdateUser({
+                            isOnline: item.isOnline,
+                            lastSeen: item.status,
+                            hideOnlineStatus: item.ghost,
+                            settings: {
+                              ...user.settings,
+                              presenceMode: item.mode,
+                              offlineAt: item.isOnline ? undefined : Date.now()
+                            } as any
+                          });
+                        }}
+                        className={`px-2.5 py-2 rounded-xl text-[11px] font-semibold text-left border transition cursor-pointer flex items-center justify-between gap-1 ${
+                          isActive
+                            ? 'bg-[#5288c1] border-blue-400 text-white shadow'
+                            : 'bg-[#131c26] border-[#283748] text-slate-300 hover:text-white hover:bg-[#202b36]'
+                        }`}
+                      >
+                        <span className="truncate">{item.label}</span>
+                        {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -2226,8 +2336,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'privacy' && (
             <div className="space-y-4 animate-in fade-in">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Lock className="w-5 h-5 text-indigo-400" /> Приватность и Безопасность
+                <Lock className="w-5 h-5 text-indigo-400" /> Приватность и Статус в сети
               </h3>
+
+              {/* Статусы присутствия в сети */}
+              <div className="p-3.5 rounded-2xl bg-[#1e2a38] border border-[#283748] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-white flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-emerald-400" /> Статус активности («В сети» / «Был в сети недавно»)
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#131c26] text-emerald-300 border border-emerald-500/30 font-bold">
+                    {user.hideOnlineStatus ? 'Невидимка' : (user.lastSeen || 'в сети')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Выберите, какой статус показывать собеседникам в шапке чата, контактах и вашем профиле:
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { label: '⚡ Авто (В сети при входе)', status: 'в сети', isOnline: true, ghost: false, mode: 'auto' },
+                    { label: '🟢 В сети', status: 'в сети', isOnline: true, ghost: false, mode: 'manual' },
+                    { label: '🕒 Был(а) только что в сети', status: 'был(а) только что в сети', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '🕒 Был(а) в сети недавно', status: 'был(а) в сети недавно', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '⏱️ Был(а) 1 мин назад', status: 'был(а) 1 мин назад', isOnline: false, ghost: false, mode: 'manual' },
+                    { label: '👻 Невидимка (скрыть)', status: 'был(а) в сети недавно', isOnline: false, ghost: true, mode: 'manual' }
+                  ].map((item) => {
+                    const currentMode = (user.settings as any)?.presenceMode || 'auto';
+                    const isActive = item.ghost
+                      ? Boolean(user.hideOnlineStatus)
+                      : item.mode === 'auto'
+                        ? currentMode === 'auto' && !user.hideOnlineStatus
+                        : currentMode === 'manual' && !user.hideOnlineStatus && (user.lastSeen || 'в сети') === item.status;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => {
+                          playSentSound();
+                          onUpdateUser({
+                            isOnline: item.isOnline,
+                            lastSeen: item.status,
+                            hideOnlineStatus: item.ghost,
+                            settings: {
+                              ...user.settings,
+                              presenceMode: item.mode,
+                              offlineAt: item.isOnline ? undefined : Date.now()
+                            } as any
+                          });
+                        }}
+                        className={`px-2.5 py-2 rounded-xl text-[11px] font-semibold text-left border transition cursor-pointer flex items-center justify-between gap-1 ${
+                          isActive
+                            ? 'bg-[#5288c1] border-blue-400 text-white shadow'
+                            : 'bg-[#131c26] border-[#283748] text-slate-300 hover:text-white hover:bg-[#202b36]'
+                        }`}
+                      >
+                        <span className="truncate">{item.label}</span>
+                        {isActive && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Ghost Mode */}
               <div className="p-3.5 rounded-2xl bg-[#1e2a38] border border-[#283748] flex items-center justify-between">
@@ -2236,13 +2405,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <EyeOff className="w-4 h-4 text-amber-400" /> Ghost Mode (Скрыть онлайн статус)
                   </div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    Собеседники видят только «был(а) недавно». Ваше реальное присутствие скрыто.
+                    Собеседники видят только «был(а) в сети недавно». Ваше реальное присутствие скрыто.
                   </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={user.hideOnlineStatus}
-                  onChange={(e) => onUpdateUser({ hideOnlineStatus: e.target.checked })}
+                  onChange={(e) =>
+                    onUpdateUser({
+                      hideOnlineStatus: e.target.checked,
+                      isOnline: !e.target.checked,
+                      lastSeen: e.target.checked ? 'был(а) в сети недавно' : 'в сети'
+                    })
+                  }
                   className="w-5 h-5 accent-[#5288c1] cursor-pointer shrink-0"
                 />
               </div>

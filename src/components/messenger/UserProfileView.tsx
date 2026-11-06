@@ -42,6 +42,7 @@ import {
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
 import { isVideoMedia } from '../../utils/mediaUtils';
+import { formatSmartTime } from '../../utils/dateUtils';
 import { AvatarEditorModal } from './AvatarEditorModal';
 import { InstallAppModal } from './InstallAppModal';
 
@@ -57,6 +58,7 @@ export interface ProfileTargetUser {
 
 interface UserProfileViewProps {
   currentUser: User;
+  savedAccounts?: User[];
   targetUser?: ProfileTargetUser | null;
   isFollowing?: boolean;
   onToggleFollow?: (userId: string) => void;
@@ -84,6 +86,7 @@ interface UserProfileViewProps {
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
   currentUser,
+  savedAccounts = [],
   targetUser = null,
   isFollowing = false,
   onToggleFollow,
@@ -115,19 +118,48 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showVisitorsModal, setShowVisitorsModal] = useState(false);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Determine whether this page represents current user or an opened user profile
   const isMe = !targetUser || targetUser.id === currentUser.id;
+  const matchedSavedUser = !isMe && targetUser
+    ? savedAccounts.find(
+        (acc) =>
+          acc.id === targetUser.id ||
+          acc.username.toLowerCase() === targetUser.username.toLowerCase() ||
+          acc.displayName.toLowerCase() === targetUser.name.toLowerCase()
+      )
+    : null;
+
   const activeProfileUser = isMe
-    ? currentUser
+    ? {
+        ...currentUser,
+        isOnline: currentUser.hideOnlineStatus ? false : (currentUser.isOnline !== false && (currentUser.lastSeen || 'в сети') === 'в сети'),
+        lastSeen: currentUser.hideOnlineStatus ? 'был(а) в сети недавно' : (currentUser.lastSeen || 'в сети')
+      }
     : {
         id: targetUser!.id,
-        displayName: targetUser!.name,
-        username: targetUser!.username,
-        avatarUrl: targetUser!.avatar,
-        bio: targetUser!.bio || 'Пользователь платформы AuraChat',
-        isOnline: true,
-        lastSeen: 'в сети'
+        displayName: matchedSavedUser?.displayName || targetUser!.name,
+        username: matchedSavedUser?.username || targetUser!.username,
+        avatarUrl: matchedSavedUser?.avatarUrl || targetUser!.avatar,
+        bio: matchedSavedUser?.bio || targetUser!.bio || 'Пользователь платформы AuraChat',
+        isOnline: matchedSavedUser
+          ? matchedSavedUser.hideOnlineStatus
+            ? false
+            : Boolean(matchedSavedUser.isOnline && (matchedSavedUser.lastSeen || 'в сети') === 'в сети')
+          : false,
+        lastSeen: matchedSavedUser
+          ? matchedSavedUser.hideOnlineStatus
+            ? 'был(а) в сети недавно'
+            : matchedSavedUser.lastSeen || (matchedSavedUser.isOnline ? 'в сети' : 'был(а) в сети недавно')
+          : 'был(а) в сети недавно'
       };
 
   // Filter posts, reels, and reposts belonging to the displayed profile user
@@ -229,9 +261,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <span>Гости профиля ({visitors.length})</span>
               </button>
             ) : (
-              <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-black/60 text-emerald-400 text-xs font-medium backdrop-blur-sm flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>в сети</span>
+              <div className={`absolute top-3 right-3 px-3 py-1 rounded-full bg-black/60 text-xs font-medium backdrop-blur-sm flex items-center gap-1.5 ${
+                activeProfileUser.isOnline ? 'text-emerald-400' : 'text-slate-300'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${activeProfileUser.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`} />
+                <span>{activeProfileUser.lastSeen}</span>
               </div>
             )}
           </div>
@@ -270,8 +304,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     <span className="truncate">{activeProfileUser.displayName}</span>
                     <ShieldCheck className="w-5 h-5 text-[#0077FF] shrink-0" />
                   </h1>
-                  <p className="text-xs sm:text-[13px] text-[#939393] mt-0.5">
-                    @{activeProfileUser.username} · в сети
+                  <p className="text-xs sm:text-[13px] text-[#939393] mt-0.5 flex items-center justify-center sm:justify-start gap-1.5">
+                    <span>@{activeProfileUser.username}</span>
+                    <span>·</span>
+                    <span className={activeProfileUser.isOnline ? 'text-emerald-400 font-medium' : 'text-[#828282]'}>
+                      {activeProfileUser.lastSeen}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -743,7 +781,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <img src={currentUser.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
                 <div>
                   <div className="font-bold text-xs text-white">{currentUser.displayName}</div>
-                  <div className="text-[11px] text-[#828282]">{liveSelectedPost.createdAt}</div>
+                  <div className="text-[11px] text-[#828282]">{formatSmartTime(liveSelectedPost.createdAt, liveSelectedPost.id, nowTick)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -856,7 +894,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-[#71aaeb]">{c.userName}</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-[#828282]">{c.createdAt}</span>
+                          <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt, c.id, nowTick)}</span>
                           {onDeleteComment && (
                             <button
                               onClick={() => onDeleteComment(liveSelectedPost.id, c.id)}
@@ -890,7 +928,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       userName: currentUser.displayName,
                       userAvatar: currentUser.avatarUrl,
                       content: commentText.trim(),
-                      createdAt: 'Только что',
+                      createdAt: new Date().toISOString(),
                       likesCount: 0
                     });
                     setCommentText('');
@@ -908,7 +946,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     userName: currentUser.displayName,
                     userAvatar: currentUser.avatarUrl,
                     content: commentText.trim(),
-                    createdAt: 'Только что',
+                    createdAt: new Date().toISOString(),
                     likesCount: 0
                   });
                   setCommentText('');

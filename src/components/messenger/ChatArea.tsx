@@ -56,6 +56,7 @@ import { ChannelManagementModal } from './ChannelManagementModal';
 import { ChatInfoModal } from './ChatInfoModal';
 import { playSentSound, playReactionSound, playNotificationSound, playVoiceMemoAudio } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
+import { formatSmartTime } from '../../utils/dateUtils';
 
 interface ChatAreaProps {
   chat: Chat;
@@ -84,6 +85,8 @@ interface ChatAreaProps {
   onDeleteChat?: (chatId: string, forBoth: boolean) => void;
   onLeaveChat?: (chatId: string) => void;
   isPhoneMode?: boolean;
+  savedAccounts?: User[];
+  onlinePeerMap?: Record<string, number>;
 }
 
 const quickEmojis = ['❤️', '👍', '🔥', '😂', '🚀', '👏', '⚡', '🎉', '💡', '👀', '🤝', '☕'];
@@ -108,10 +111,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onDeleteChatHistory,
   onDeleteChat,
   onLeaveChat,
-  isPhoneMode = false
+  isPhoneMode = false,
+  savedAccounts = [],
+  onlinePeerMap = {}
 }) => {
   const [inputText, setInputText] = useState('');
   const [isVoiceStudioOpen, setIsVoiceStudioOpen] = useState(false);
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [activeTopicId, setActiveTopicId] = useState<string | null>(
     chat.topics ? chat.topics[0]?.id : null
   );
@@ -459,14 +473,90 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     setHoveredMessageId(null);
   };
 
-  const displayMessages = messages.filter((m) => {
-    if (chat.topics && activeTopicId && activeTopicId !== 'top_all') {
-      return m.topicId === activeTopicId;
-    }
-    return true;
-  });
+  const displayMessages = React.useMemo(() => {
+    const seenIds = new Set<string>();
+    return messages.filter((m) => {
+      if (!m || !m.id) return false;
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      if (chat.topics && activeTopicId && activeTopicId !== 'top_all') {
+        return m.topicId === activeTopicId;
+      }
+      return true;
+    });
+  }, [messages, chat.topics, activeTopicId]);
 
   const isGroupOrChannel = chat.type === 'group' || chat.type === 'channel';
+
+  // Realistic online & read status for direct interlocutor:
+  // Checks custom status from Settings (savedAccounts), live onlinePeerMap, or read status of latest message
+  const peerPresence = React.useMemo(() => {
+    if (chat.type !== 'direct') {
+      return { isOnline: false, statusText: '' };
+    }
+    const peerMember = chat.members?.find((m) => m.userId !== currentUser.id) || chat.members?.[0];
+    const matchedAccount = savedAccounts.find(
+      (acc) =>
+        acc.id !== currentUser.id &&
+        ((peerMember && (acc.id === peerMember.userId || acc.username.toLowerCase() === peerMember.username.toLowerCase())) ||
+          acc.displayName.toLowerCase() === chat.title.toLowerCase())
+    );
+
+    if (matchedAccount) {
+      if (matchedAccount.hideOnlineStatus) {
+        return { isOnline: false, statusText: 'был(а) в сети недавно' };
+      }
+      if (matchedAccount.isOnline && (!matchedAccount.lastSeen || matchedAccount.lastSeen === 'в сети')) {
+        return { isOnline: true, statusText: 'в сети' };
+      }
+      if (matchedAccount.lastSeen) {
+        return { isOnline: matchedAccount.lastSeen === 'в сети', statusText: matchedAccount.lastSeen };
+      }
+    }
+
+    const lastMyMsg = [...displayMessages].reverse().find((m) => m.senderId === currentUser.id);
+    const lastPeerMsg = [...displayMessages].reverse().find((m) => m.senderId !== currentUser.id);
+
+    // If interlocutor entered the chat recently or read our latest outgoing message -> interlocutor is online
+    if (
+      (onlinePeerMap[chat.id] && Date.now() - onlinePeerMap[chat.id] < 120000) ||
+      (lastMyMsg && lastMyMsg.status === 'read')
+    ) {
+      return { isOnline: true, statusText: 'в сети' };
+    }
+
+    // Check if interlocutor sent a message very recently (within 2 minutes)
+    if (lastPeerMsg && lastPeerMsg.createdAt) {
+      const parsed = Date.parse(lastPeerMsg.createdAt);
+      if (!isNaN(parsed)) {
+        const diffMin = Math.max(1, Math.floor((Date.now() - parsed) / 60000));
+        if (diffMin <= 2 && (!lastMyMsg || lastMyMsg.status === 'read')) {
+          return { isOnline: true, statusText: 'в сети' };
+        }
+        if (diffMin < 60) {
+          return { isOnline: false, statusText: `был(а) ${diffMin} мин назад` };
+        }
+      }
+    }
+
+    // Deterministic realistic "был(а) X мин назад" or "был(а) в сети недавно" so not everyone is immediately online
+    const seedStr = chat.id || chat.title || 'peer';
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      hash = (hash * 31 + seedStr.charCodeAt(i)) % 1000;
+    }
+    const statusOptions = [
+      'был(а) в сети недавно',
+      'был(а) 1 мин назад',
+      'был(а) 3 мин назад',
+      'был(а) 5 мин назад',
+      'был(а) 12 мин назад'
+    ];
+    return {
+      isOnline: false,
+      statusText: statusOptions[hash % statusOptions.length]
+    };
+  }, [chat.type, chat.id, chat.title, chat.members, displayMessages, currentUser.id, savedAccounts, onlinePeerMap, nowTick]);
 
   return (
     <div className="flex-1 h-full w-full min-w-0 max-w-full flex flex-col bg-[#141414] relative overflow-hidden text-[#e1e3e6] select-none min-h-0">
@@ -493,7 +583,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 alt={chat.title}
                 className="w-9 h-9 rounded-full object-cover group-hover:opacity-90 transition"
               />
-              {chat.type === 'direct' && (
+              {chat.type === 'direct' && peerPresence.isOnline && (
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#222222] bg-emerald-500" />
               )}
             </div>
@@ -529,9 +619,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     <span className="truncate">{typingUser}</span>
                   </span>
                 ) : chat.type === 'saved' ? (
-                  <span className="text-[#828282]">Избранное • личные заметки</span>
+                  <span className="text-[#71aaeb] font-medium">Личное хранилище • 1 человек (только вы)</span>
                 ) : chat.type === 'direct' ? (
-                  <span className="text-emerald-400">в сети</span>
+                  peerPresence.isOnline ? (
+                    <span className="text-emerald-400 font-medium">в сети</span>
+                  ) : (
+                    <span className="text-[#828282]">{peerPresence.statusText}</span>
+                  )
                 ) : (
                   <span className="truncate">{chat.membersCount} {chat.type === 'channel' ? 'подписчиков' : 'участников'}</span>
                 )}
@@ -638,7 +732,39 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             {/* DROPDOWN MENU */}
             {showMoreMenu && (
               <div className="absolute right-0 top-full mt-1.5 w-64 bg-[#1c1c20] border border-[#333338] shadow-2xl rounded-2xl p-1.5 z-50 text-xs text-[#e1e3e6] animate-in fade-in zoom-in-95 duration-150">
-                {chat.type === 'direct' ? (
+                {chat.type === 'saved' ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        if (onDeleteChatHistory) {
+                          onDeleteChatHistory(chat.id, false);
+                        }
+                        triggerToast('🧹 Личное хранилище «Избранное» очищено');
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-rose-500/15 text-rose-400 flex items-center gap-2.5 transition text-left cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold">Очистить хранилище</div>
+                        <div className="text-[10px] text-rose-300/70">
+                          Удалить сохранённые заметки и файлы
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowChatInfoModal(true);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-[#2c2d2e] text-[#939393] hover:text-white flex items-center gap-2.5 transition text-left cursor-pointer"
+                    >
+                      <Info className="w-4 h-4 shrink-0" />
+                      <span>О хранилище (1 человек)</span>
+                    </button>
+                  </>
+                ) : chat.type === 'direct' ? (
                   <>
                     {/* 1. Заблокировать / Разблокировать */}
                     <button
@@ -1327,10 +1453,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                   )}
 
-                  {/* Timestamp & checkmarks */}
+                  {/* Timestamp & checkmarks: 1 галочка если отправлено и не прочитано, 2 галочки если собеседник зашёл и прочитал */}
                   <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-[#939393]">
-                    <span>{msg.createdAt}</span>
-                    {isMe && <CheckCheck className="w-3.5 h-3.5 text-[#71aaeb]" />}
+                    <span>{formatSmartTime(msg.createdAt, msg.id, nowTick)}</span>
+                    {isMe && (
+                      chat.type === 'saved' || msg.status === 'read' ? (
+                        <span title="Прочитано собеседником">
+                          <CheckCheck className="w-3.5 h-3.5 text-[#71aaeb]" />
+                        </span>
+                      ) : (
+                        <span title="Отправлено (собеседник ещё не зашёл в чат)">
+                          <Check className="w-3.5 h-3.5 text-[#939393]" />
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
 

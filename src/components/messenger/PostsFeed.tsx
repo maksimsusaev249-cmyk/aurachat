@@ -115,6 +115,14 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
   const [commSearchQuery, setCommSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [userPollVotes, setUserPollVotes] = useState<Record<string, number>>({});
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setFeedTab(initialFeedTab);
@@ -255,7 +263,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
       content: text || (attached?.type === 'gif' ? 'Отправил(а) гифку' : 'Отправил(а) фото'),
       mediaUrl: attached?.url,
       mediaType: attached?.type,
-      createdAt: formatSmartTime(new Date()),
+      createdAt: new Date().toISOString(),
       likesCount: 0
     };
 
@@ -723,7 +731,10 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                         </button>
                       )}
                     </div>
-                    <div className="text-[11px] text-[#828282]">{formatSmartTime(post.createdAt)}</div>
+                    <div className="text-[11px] text-[#939393] font-medium flex items-center gap-1 mt-0.5" title="Время публикации записи">
+                      <Clock className="w-3 h-3 text-[#71aaeb]/85 shrink-0" />
+                      <span>{formatSmartTime(post.createdAt, post.id, nowTick)}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1032,7 +1043,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                           )}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt)}</span>
+                          <span className="text-[10px] text-[#828282]">{formatSmartTime(c.createdAt, c.id, nowTick)}</span>
                           <button 
                             onClick={() => handleShareComment(c.id)}
                             className="p-1 rounded hover:bg-[#2c2d2e] text-[#828282] hover:text-white transition cursor-pointer"

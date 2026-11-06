@@ -6,6 +6,7 @@ import {
   Search, 
   Menu, 
   Plus, 
+  Check,
   CheckCheck, 
   Camera, 
   FileText,
@@ -25,6 +26,8 @@ interface TelegramSidebarProps {
   chats: Chat[];
   selectedChatId: string;
   onSelectChat: (chat: Chat) => void;
+  messagesMap?: Record<string, any[]>;
+  onlinePeerMap?: Record<string, number>;
   isMobileChatOpen?: boolean;
   stories: Story[];
   onOpenStory: (story: Story) => void;
@@ -70,6 +73,8 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
   chats,
   selectedChatId,
   onSelectChat,
+  messagesMap = {},
+  onlinePeerMap = {},
   isMobileChatOpen = false,
   stories,
   onOpenStory,
@@ -95,6 +100,14 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
 }) => {
   const [filter, setFilter] = useState<'all' | 'direct' | 'group' | 'channel'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   const rawQuery = searchQuery.trim().toLowerCase();
   const cleanQuery = rawQuery.replace(/^@/, '');
@@ -284,22 +297,81 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
         ? 'hidden md:flex md:w-72 lg:w-80 xl:w-96'
         : 'w-full md:w-72 lg:w-80 xl:w-96'
     }`}>
-      {/* Top Header & Search (VKontakte Messenger Dark Mode) */}
-      <div className="px-3 py-2.5 bg-[#222222] border-b border-[#2e2e2e] flex items-center justify-between gap-2 w-full min-w-0">
-        <button
-          onClick={onOpenMainMenu || onOpenSettings}
-          className="p-1.5 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0 flex items-center gap-1.5"
-          title="Меню AuraChat (Контакты, Настройки, Смена аккаунта)"
-        >
-          <Menu className="w-5 h-5 text-[#71aaeb]" />
-        </button>
+      {/* Top Header & Search (VKontakte & Telegram Clean Mobile/Desktop Header) */}
+      <div className="px-3 pt-2.5 pb-2.5 bg-[#222222] border-b border-[#2e2e2e] flex flex-col gap-2 w-full min-w-0">
+        {/* Row 1: Menu, Title & Action Buttons */}
+        <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={onOpenMainMenu || onOpenSettings}
+              className="p-1.5 -ml-1 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0 flex items-center justify-center"
+              title="Меню AuraChat (Контакты, Настройки, Смена аккаунта)"
+            >
+              <Menu className="w-5 h-5 text-[#71aaeb]" />
+            </button>
+            <h2 className="font-bold text-base text-white tracking-tight truncate">
+              Чаты
+            </h2>
+          </div>
 
-        <div className="w-0 flex-1 min-w-0 relative flex items-center gap-1.5">
+          {/* Action icons: Calls, Settings, Plus, Tech Specs */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Phone Call History Button */}
+            {onOpenCallsModal && (
+              <button
+                onClick={onOpenCallsModal}
+                className={`relative p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
+                  missedCallsCount > 0
+                    ? 'text-rose-400 bg-rose-500/20 border border-rose-500/40'
+                    : 'text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e]'
+                }`}
+                title={missedCallsCount > 0 ? `Пропущенные звонки (${missedCallsCount})` : 'История звонков'}
+              >
+                <Phone className="w-4 h-4" />
+                {missedCallsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-600 text-white rounded-full text-[8px] font-bold flex items-center justify-center shadow-xs">
+                    {missedCallsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Quick Settings Button */}
+            <button
+              onClick={onOpenSettings}
+              className="p-1.5 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0"
+              title="Настройки, смена аккаунта, выход и удаление аккаунта"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            {/* Combined Plus Action Menu Button */}
+            <button
+              onClick={onOpenPlusMenu || onOpenStudio || onAddStory}
+              className="p-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
+              title="Создать пост, историю, новый чат или сообщество"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+            </button>
+
+            {/* Tech Specs Modal Button */}
+            <button
+              onClick={onOpenTechSpecs}
+              className={`${isPhoneMode ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
+              title="Архитектура, SQL DDL и Бэкенд код"
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Full-width Search Bar with Global Search Button */}
+        <div className="flex items-center gap-2 w-full min-w-0">
           <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#828282]" />
             <input
               type="text"
-              placeholder="Поиск людей, сообществ, фото, видео..."
+              placeholder="Поиск людей, сообществ, сообщений..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#2c2d2e] text-white text-xs rounded-lg pl-8 pr-7 py-1.5 outline-none placeholder-[#828282] border border-transparent focus:border-[#0077FF] focus:bg-[#19191a] transition"
@@ -318,60 +390,13 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             <button
               type="button"
               onClick={() => onOpenGlobalSearch(searchQuery)}
-              className="px-2.5 py-1.5 rounded-lg bg-[#0077FF]/15 hover:bg-[#0077FF]/25 text-[#71aaeb] border border-[#0077FF]/30 text-[11px] font-semibold shrink-0 cursor-pointer transition"
+              className="px-2.5 py-1.5 rounded-lg bg-[#0077FF]/15 hover:bg-[#0077FF]/25 text-[#71aaeb] border border-[#0077FF]/30 text-[11px] font-semibold shrink-0 cursor-pointer transition whitespace-nowrap"
               title="Глобальный поиск: люди, сообщества, каналы, посты, видео и фото"
             >
               Все
             </button>
           )}
         </div>
-
-        {/* Phone Call History Button */}
-        {onOpenCallsModal && (
-          <button
-            onClick={onOpenCallsModal}
-            className={`relative p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
-              missedCallsCount > 0
-                ? 'text-rose-400 bg-rose-500/20 border border-rose-500/40'
-                : 'text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e]'
-            }`}
-            title={missedCallsCount > 0 ? `Пропущенные звонки (${missedCallsCount})` : 'История звонков'}
-          >
-            <Phone className="w-4 h-4" />
-            {missedCallsCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-600 text-white rounded-full text-[8px] font-bold flex items-center justify-center shadow-xs">
-                {missedCallsCount}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* Quick Settings Button */}
-        <button
-          onClick={onOpenSettings}
-          className="p-1.5 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0"
-          title="Настройки, смена аккаунта, выход и удаление аккаунта"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-
-        {/* Combined Plus Action Menu Button */}
-        <button
-          onClick={onOpenPlusMenu || onOpenStudio || onAddStory}
-          className="relative p-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white transition flex items-center gap-1 cursor-pointer shrink-0"
-          title="Создать пост, историю, новый чат или сообщество"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-        </button>
-
-        {/* Tech Specs Modal Button */}
-        <button
-          onClick={onOpenTechSpecs}
-          className={`${isPhoneMode ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
-          title="Архитектура, SQL DDL и Бэкенд код"
-        >
-          <FileText className="w-4 h-4" />
-        </button>
       </div>
 
       {/* Stories Tray */}
@@ -478,12 +503,32 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             )}
             {filteredChats.map((c) => {
               const isSelected = c.id === selectedChatId;
+              const chatMsgs = messagesMap[c.id] || [];
+              const lastMsg = chatMsgs.length > 0 ? chatMsgs[chatMsgs.length - 1] : null;
+              const lastMyMsg = [...chatMsgs].reverse().find((m) => m.senderId === currentUser.id);
+              const peerMember = c.members?.find((m) => m.userId !== currentUser.id) || c.members?.[0];
+              const matchedAcc = allUsers.find(
+                (acc) =>
+                  acc.id !== currentUser.id &&
+                  ((peerMember && (acc.id === peerMember.userId || acc.username.toLowerCase() === peerMember.username.toLowerCase())) ||
+                    acc.displayName.toLowerCase() === c.title.toLowerCase())
+              );
+              const isPeerOnline =
+                c.type === 'direct' &&
+                (matchedAcc
+                  ? Boolean(!matchedAcc.hideOnlineStatus && matchedAcc.isOnline && (matchedAcc.lastSeen || 'в сети') === 'в сети')
+                  : Boolean(
+                      (onlinePeerMap[c.id] && Date.now() - onlinePeerMap[c.id] < 120000) ||
+                        (lastMyMsg && lastMyMsg.status === 'read')
+                    ));
+              const effectiveUnreadCount = isSelected ? 0 : (c.unreadCount || 0);
+              const isLastMsgRead = c.type === 'saved' || !lastMsg || lastMsg.status === 'read';
 
               return (
                 <div
                   key={c.id}
                   onClick={() => {
-                    onSelectChat(c);
+                    onSelectChat({ ...c, unreadCount: 0 });
                     if (isSearching) setSearchQuery('');
                   }}
                   className={`my-0.5 px-2.5 py-2 rounded-xl cursor-pointer flex items-center gap-3 transition ${
@@ -492,17 +537,17 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                       : 'hover:bg-[#2c2d2e]/60 text-[#e1e3e6]'
                   }`}
                 >
-                  {/* Avatar + presence */}
+                  {/* Avatar + realistic presence */}
                   <div className="relative shrink-0">
                     <img
                       src={c.avatarUrl}
                       alt={c.title}
                       className="w-12 h-12 rounded-full object-cover"
                     />
-                    {c.type === 'direct' && (
+                    {c.type === 'direct' && isPeerOnline && (
                       <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 ${
                         isSelected ? 'border-[#2c2d2e]' : 'border-[#222222]'
-                      } bg-emerald-500`} />
+                      } bg-emerald-500`} title="В сети" />
                     )}
                   </div>
 
@@ -523,12 +568,12 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                         )}
                         {c.type === 'saved' && (
                           <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 text-[#71aaeb] bg-[#0077FF]/15 shrink-0">
-                            <Bookmark className="w-2.5 h-2.5" /> Избранное
+                            <Bookmark className="w-2.5 h-2.5" /> Хранилище (1 чел.)
                           </span>
                         )}
                       </h4>
                       <span className="text-[11px] shrink-0 text-[#828282]">
-                        {formatSmartTime(c.lastMessageTime)}
+                        {formatSmartTime(lastMsg?.createdAt || c.lastMessageTime, lastMsg?.id || c.id, nowTick)}
                       </span>
                     </div>
 
@@ -539,12 +584,18 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                         {c.lastMessage}
                       </p>
 
-                      {c.unreadCount ? (
+                      {effectiveUnreadCount > 0 ? (
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold shrink-0 min-w-5 text-center bg-[#0077FF] text-white">
-                          {c.unreadCount}
+                          {effectiveUnreadCount}
+                        </span>
+                      ) : isLastMsgRead ? (
+                        <span title="Прочитано (2 галочки)">
+                          <CheckCheck className="w-4 h-4 shrink-0 text-[#71aaeb]" />
                         </span>
                       ) : (
-                        <CheckCheck className="w-4 h-4 shrink-0 text-[#71aaeb]" />
+                        <span title="Отправлено, ещё не прочитано (1 галочка)">
+                          <Check className="w-4 h-4 shrink-0 text-[#939393]" />
+                        </span>
                       )}
                     </div>
                   </div>
@@ -561,7 +612,20 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
               <Users className="w-3 h-3" />
               <span>Пользователи и контакты ({matchedGlobalUsers.length})</span>
             </div>
-            {matchedGlobalUsers.map((u) => (
+            {matchedGlobalUsers.map((u) => {
+              const matchedAcc = allUsers.find(
+                (acc) => acc.id === u.userId || acc.username.toLowerCase() === u.username.toLowerCase()
+              );
+              const isUserOnline = matchedAcc
+                ? Boolean(!matchedAcc.hideOnlineStatus && matchedAcc.isOnline && (matchedAcc.lastSeen || 'в сети') === 'в сети')
+                : false;
+              const userStatusLabel = matchedAcc
+                ? matchedAcc.hideOnlineStatus
+                  ? 'был(а) в сети недавно'
+                  : matchedAcc.lastSeen || (matchedAcc.isOnline ? 'в сети' : 'был(а) в сети недавно')
+                : 'был(а) в сети недавно';
+
+              return (
               <div
                 key={u.userId + '_' + u.username}
                 onClick={() => {
@@ -589,15 +653,21 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                       alt={u.displayName}
                       className="w-11 h-11 rounded-full object-cover border border-[#3a3b3c]"
                     />
-                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#222222]" />
+                    {isUserOnline && (
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#222222]" />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold text-xs sm:text-[13px] text-white truncate">
                         {u.displayName}
                       </span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#0077FF]/15 text-[#71aaeb] border border-[#0077FF]/30 shrink-0">
-                        Профиль
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded shrink-0 ${
+                        isUserOnline
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-[#0077FF]/15 text-[#71aaeb] border border-[#0077FF]/30'
+                      }`}>
+                        {userStatusLabel}
                       </span>
                     </div>
                     <div className="text-[11px] text-[#939393] truncate flex items-center gap-2">
@@ -642,7 +712,8 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
