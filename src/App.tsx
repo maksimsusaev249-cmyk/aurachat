@@ -917,18 +917,24 @@ export default function App() {
     setSelectedCommunity(updated);
   };
 
-  const handlePublishCommunityPost = (communityId: string, postData: Partial<Post> & { caption: string }) => {
+  const handlePublishCommunityPost = (communityId: string, postData: Partial<Post> & { caption?: string }) => {
     const targetComm = communities.find((c) => c.id === communityId);
     const cleanMedia = postData.mediaUrl?.trim() || '';
+    const imagesList = postData.images && postData.images.length > 0
+      ? postData.images
+      : cleanMedia
+      ? [cleanMedia]
+      : [];
     const newPost: Post = {
       id: 'post_comm_' + Date.now(),
       userId: postData.userId || (targetComm ? targetComm.id : currentUser.id),
       userName: postData.userName || targetComm?.title || currentUser.displayName,
       userAvatar: postData.userAvatar || targetComm?.avatarUrl || currentUser.avatarUrl,
       type: postData.type || 'post',
-      mediaUrl: cleanMedia,
-      mediaType: postData.mediaType || (cleanMedia ? 'image' : 'text'),
-      caption: postData.caption,
+      mediaUrl: cleanMedia || imagesList[0] || '',
+      images: imagesList,
+      mediaType: postData.mediaType || (postData.mediaType === 'video' ? 'video' : imagesList.length > 0 ? 'image' : 'text'),
+      caption: (postData.caption ?? '').trim(),
       communityId: communityId,
       communityTitle: targetComm?.title,
       music: postData.music,
@@ -939,7 +945,7 @@ export default function App() {
       viewsCount: 0,
       commentsCount: 0,
       comments: [],
-      createdAt: 'Только что'
+      createdAt: new Date().toISOString()
     };
 
     setPosts((prev) => [newPost, ...prev]);
@@ -2765,6 +2771,7 @@ export default function App() {
                 onBackMobile={() => setIsMobileChatOpen(false)}
                 onSendMessage={handleSendMessage}
                 onStartCall={(isVideo) => {
+                  const isGroup = selectedChat.type === 'group' || selectedChat.type === 'channel';
                   const otherMember = selectedChat.members?.find((m) => m.userId !== currentUser.id);
                   const callId = 'call_' + Date.now();
                   setActiveCallSession({
@@ -2774,7 +2781,9 @@ export default function App() {
                     isVideo,
                     callId,
                     targetUserId: otherMember?.userId,
-                    targetUsername: otherMember?.username
+                    targetUsername: otherMember?.username,
+                    isGroupCall: isGroup,
+                    groupMembers: selectedChat.members || []
                   });
 
                   try {

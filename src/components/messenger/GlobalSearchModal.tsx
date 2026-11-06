@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, Chat, Community, Post, Story, Message } from '../../types';
 import { initialContactsList } from './ContactsModal';
 import { isVideoMedia } from '../../utils/mediaUtils';
+import { matchPhoneNumber, matchUserText, isCategoryKeywordMatch } from '../../utils/searchUtils';
 import {
   Search,
   X,
@@ -201,36 +202,54 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     return Array.from(map.values());
   }, [allUsers, chats, globalCatalogChats, posts, reels, communities]);
 
-  // Filtered Users / Profiles
+  // Filtered Users / Profiles (supports name, @username, and any phone number format)
   const matchedUsers = useMemo(() => {
     if (!cleanQuery) return allProfiles;
-    const genericKeywords = ['люди', 'профиль', 'профили', 'пользователь', 'пользователи', 'юзер', 'юзеры'];
-    const isGenericUserQuery = genericKeywords.includes(cleanQuery);
+    const isGenericUserQuery = isCategoryKeywordMatch(cleanQuery, [
+      'люди',
+      'профиль',
+      'профили',
+      'пользователь',
+      'пользователи',
+      'юзер',
+      'юзеры',
+      'контакт',
+      'контакты'
+    ]);
 
     return allProfiles.filter(
       (u) =>
         isGenericUserQuery ||
-        u.name.toLowerCase().includes(cleanQuery) ||
-        u.username.toLowerCase().includes(cleanQuery) ||
-        (u.bio && u.bio.toLowerCase().includes(cleanQuery)) ||
-        (u.phone && u.phone.toLowerCase().includes(cleanQuery)) ||
-        (u.email && u.email.toLowerCase().includes(cleanQuery))
+        matchUserText(u.name, cleanQuery) ||
+        matchUserText(u.username, cleanQuery) ||
+        matchPhoneNumber(u.phone, cleanQuery) ||
+        matchUserText(u.bio, cleanQuery) ||
+        matchUserText(u.email, cleanQuery)
     );
   }, [allProfiles, cleanQuery]);
 
-  // Filtered Communities
+  // Filtered Communities (safe keyword checks + title/description/inviteCode)
   const matchedCommunities = useMemo(() => {
     if (!cleanQuery) return communities;
+    const isCommKeyword = isCategoryKeywordMatch(cleanQuery, [
+      'сообщество',
+      'сообщества',
+      'паблик',
+      'паблики',
+      'клуб',
+      'клубы',
+      'community',
+      'communities'
+    ]);
+
     return communities.filter(
       (c) =>
-        c.title.toLowerCase().includes(cleanQuery) ||
-        c.description.toLowerCase().includes(cleanQuery) ||
-        c.inviteCode.toLowerCase().includes(cleanQuery) ||
-        c.ownerName.toLowerCase().includes(cleanQuery) ||
-        (c.ownerUsername && c.ownerUsername.toLowerCase().includes(cleanQuery)) ||
-        'сообщество'.includes(cleanQuery) ||
-        'сообщества'.includes(cleanQuery) ||
-        'группа'.includes(cleanQuery)
+        isCommKeyword ||
+        matchUserText(c.title, cleanQuery) ||
+        matchUserText(c.description, cleanQuery) ||
+        matchUserText(c.inviteCode, cleanQuery) ||
+        matchUserText(c.ownerName, cleanQuery) ||
+        (c.ownerUsername ? matchUserText(c.ownerUsername, cleanQuery) : false)
     );
   }, [communities, cleanQuery]);
 

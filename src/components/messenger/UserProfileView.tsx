@@ -190,7 +190,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   return (
     <div className="flex-1 h-full bg-[#141414] overflow-y-auto p-3 sm:p-5 flex flex-col items-center select-none text-[#e1e3e6] scrollbar-thin">
-      <div className="w-full max-w-3xl space-y-4 pb-16">
+      <div className="w-full max-w-3xl space-y-4 pb-28 sm:pb-20">
         
         {/* AuraChat Profile Top Navigation Bar */}
         <div className="px-3.5 py-2.5 rounded-2xl bg-[#222222] border border-[#2e2e2e] flex items-center justify-between">

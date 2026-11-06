@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { initialContactsList, ContactItem } from './ContactsModal';
 import { User } from '../../types';
+import { matchPhoneNumber, matchUserText } from '../../utils/searchUtils';
 
 interface StartCallModalProps {
   isOpen: boolean;
@@ -101,9 +102,9 @@ export const StartCallModal: React.FC<StartCallModalProps> = ({
   }, [savedAccounts, currentUserId]);
 
   const filteredContacts = contactsList.filter((c) =>
-    c.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.phone.includes(searchQuery)
+    matchUserText(c.displayName, searchQuery) ||
+    matchUserText(c.username, searchQuery) ||
+    matchPhoneNumber(c.phone, searchQuery)
   );
 
   const selectedContacts = contactsList.filter((c) => selectedUserIds.includes(c.userId));

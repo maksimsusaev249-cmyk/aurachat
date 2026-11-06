@@ -3,6 +3,13 @@ import { Chat, Community, Story, User } from '../../types';
 import { initialContactsList } from './ContactsModal';
 import { formatSmartTime } from '../../utils/dateUtils';
 import { 
+  matchPhoneNumber, 
+  matchUserText, 
+  isCategoryKeywordMatch, 
+  getUnifiedGlobalUsersDirectory, 
+  DirectoryUser 
+} from '../../utils/searchUtils';
+import { 
   Search, 
   Menu, 
   Plus, 
@@ -122,7 +129,25 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
     return isInMyDirectChats || Boolean(followingUserIds[st.userId]);
   });
 
-  // 1. Filter user's existing chats
+  // 1. Build unified deduplicated global users directory across platform & contacts
+  const globalUsersDirectory = React.useMemo(() => {
+    return getUnifiedGlobalUsersDirectory(allUsers, currentUser.id, chats, globalCatalogChats, communities);
+  }, [allUsers, currentUser.id, chats, globalCatalogChats, communities]);
+
+  // Phone lookup map for chats and members
+  const phoneLookupMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    globalUsersDirectory.forEach((u) => {
+      if (u.phone) {
+        if (u.userId) map.set(u.userId.toLowerCase(), u.phone);
+        if (u.username) map.set(u.username.toLowerCase(), u.phone);
+        if (u.displayName) map.set(u.displayName.toLowerCase(), u.phone);
+      }
+    });
+    return map;
+  }, [globalUsersDirectory]);
+
+  // 2. Filter user's existing chats (with name, username, phone, and safe keyword checks)
   const filteredChats = chats.filter((c) => {
     if (!isSearching) {
       if (filter === 'direct') {
@@ -133,125 +158,77 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
       return true;
     }
 
-    const titleMatch = c.title.toLowerCase().includes(cleanQuery);
-    const descMatch = c.description ? c.description.toLowerCase().includes(cleanQuery) : false;
-    const inviteMatch = c.inviteCode ? c.inviteCode.toLowerCase().includes(cleanQuery) : false;
-    const msgMatch = c.lastMessage ? c.lastMessage.toLowerCase().includes(cleanQuery) : false;
-    const memberMatch = c.members.some(
-      (m) =>
-        m.displayName.toLowerCase().includes(cleanQuery) ||
-        m.username.toLowerCase().includes(cleanQuery)
-    );
-    const typeKeywordMatch =
-      (c.type === 'channel' && ('канал'.includes(cleanQuery) || 'каналы'.includes(cleanQuery) || 'channel'.includes(cleanQuery))) ||
-      (c.type === 'group' && ('группа'.includes(cleanQuery) || 'беседа'.includes(cleanQuery) || 'беседы'.includes(cleanQuery) || 'group'.includes(cleanQuery))) ||
-      (c.type === 'saved' && ('избранное'.includes(cleanQuery) || 'saved'.includes(cleanQuery)));
+    const titleMatch = matchUserText(c.title, cleanQuery);
+    const descMatch = c.description ? matchUserText(c.description, cleanQuery) : false;
+    const inviteMatch = c.inviteCode ? matchUserText(c.inviteCode, cleanQuery) : false;
+    const msgMatch = c.lastMessage ? matchUserText(c.lastMessage, cleanQuery) : false;
 
-    return titleMatch || descMatch || inviteMatch || msgMatch || memberMatch || typeKeywordMatch;
+    // Check members for name, username, OR phone number
+    const memberMatch = c.members.some((m) => {
+      const nameOrUserMatch = matchUserText(m.displayName, cleanQuery) || matchUserText(m.username, cleanQuery);
+      const mPhone = phoneLookupMap.get(m.userId.toLowerCase()) || phoneLookupMap.get(m.username.toLowerCase()) || phoneLookupMap.get(m.displayName.toLowerCase());
+      const phoneMatch = matchPhoneNumber(mPhone, cleanQuery);
+      return nameOrUserMatch || phoneMatch;
+    });
+
+    // For direct chats: check peer phone directly
+    const directPeer = c.type === 'direct' ? c.members.find((m) => m.userId !== currentUser.id) : null;
+    const directPhone = directPeer
+      ? phoneLookupMap.get(directPeer.userId.toLowerCase()) || phoneLookupMap.get(directPeer.username.toLowerCase()) || phoneLookupMap.get(c.title.toLowerCase())
+      : undefined;
+    const directPhoneMatch = matchPhoneNumber(directPhone, cleanQuery);
+
+    // Safe category keyword matches (never match single letters!)
+    const typeKeywordMatch =
+      (c.type === 'channel' && isCategoryKeywordMatch(cleanQuery, ['канал', 'каналы', 'channel', 'channels'])) ||
+      (c.type === 'group' && isCategoryKeywordMatch(cleanQuery, ['группа', 'группы', 'беседа', 'беседы', 'group', 'groups'])) ||
+      (c.type === 'saved' && isCategoryKeywordMatch(cleanQuery, ['избранное', 'saved', 'заметки', 'хранилище']));
+
+    return titleMatch || descMatch || inviteMatch || msgMatch || memberMatch || directPhoneMatch || typeKeywordMatch;
   });
 
-  // 2. Build deduplicated global users directory (registered accounts + contacts + chat members)
-  const globalUsersDirectory = React.useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        userId: string;
-        displayName: string;
-        username: string;
-        avatarUrl: string;
-        phone?: string;
-        email?: string;
-        bio?: string;
-      }
-    >();
-
-    allUsers.forEach((u) => {
-      if (u.id === currentUser.id) return;
-      map.set(u.username.toLowerCase(), {
-        userId: u.id,
-        displayName: u.displayName,
-        username: u.username,
-        avatarUrl: u.avatarUrl,
-        phone: u.phone,
-        email: u.email,
-        bio: u.bio
-      });
-    });
-
-    initialContactsList.forEach((c) => {
-      if (c.userId === currentUser.id) return;
-      const key = c.username.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          userId: c.userId,
-          displayName: c.displayName,
-          username: c.username,
-          avatarUrl: c.avatarUrl,
-          phone: c.phone,
-          bio: c.statusText
-        });
-      }
-    });
-
-    globalCatalogChats.forEach((chat) => {
-      chat.members.forEach((m) => {
-        if (m.userId === currentUser.id) return;
-        const key = m.username.toLowerCase();
-        if (!map.has(key)) {
-          map.set(key, {
-            userId: m.userId,
-            displayName: m.displayName,
-            username: m.username,
-            avatarUrl: m.avatarUrl,
-            bio: m.customTitle
-          });
-        }
-      });
-    });
-
-    return Array.from(map.values());
-  }, [allUsers, globalCatalogChats, currentUser.id]);
-
-  // Matched users in global search
+  // 3. Matched users in global search (searches displayName, @username, and phone numbers in any format)
   const matchedGlobalUsers = isSearching
     ? globalUsersDirectory.filter((u) => {
-        const genericKeywords = ['пользователь', 'пользователи', 'люди', 'контакт', 'контакты', 'юзер', 'юзеры'];
-        const isGenericUserQuery = genericKeywords.includes(cleanQuery);
+        const isGenericUserQuery = isCategoryKeywordMatch(cleanQuery, [
+          'пользователь',
+          'пользователи',
+          'люди',
+          'контакт',
+          'контакты',
+          'юзер',
+          'юзеры'
+        ]);
 
-        return (
-          isGenericUserQuery ||
-          u.displayName.toLowerCase().includes(cleanQuery) ||
-          u.username.toLowerCase().includes(cleanQuery) ||
-          (u.phone && u.phone.toLowerCase().includes(cleanQuery)) ||
-          (u.email && u.email.toLowerCase().includes(cleanQuery)) ||
-          (u.bio && u.bio.toLowerCase().includes(cleanQuery))
-        );
+        const nameMatch = matchUserText(u.displayName, cleanQuery);
+        const userMatch = matchUserText(u.username, cleanQuery);
+        const phoneMatch = matchPhoneNumber(u.phone, cleanQuery);
+        const emailMatch = matchUserText(u.email, cleanQuery);
+        const bioMatch = matchUserText(u.bio, cleanQuery);
+
+        return isGenericUserQuery || nameMatch || userMatch || phoneMatch || emailMatch || bioMatch;
       })
     : [];
 
-  // 3. Matched global channels & groups (not yet in filteredChats)
+  // 4. Matched global channels & groups (not yet in filteredChats)
   const matchedGlobalChats = isSearching
     ? globalCatalogChats.filter((gc) => {
         if (gc.type !== 'channel' && gc.type !== 'group') return false;
         if (filteredChats.some((fc) => fc.id === gc.id)) return false;
 
-        const isChannelQuery =
+        const isChannelKeyword =
           gc.type === 'channel' &&
-          ('канал'.includes(cleanQuery) || 'каналы'.includes(cleanQuery) || 'channel'.includes(cleanQuery));
-        const isGroupQuery =
+          isCategoryKeywordMatch(cleanQuery, ['канал', 'каналы', 'channel', 'channels']);
+        const isGroupKeyword =
           gc.type === 'group' &&
-          ('группа'.includes(cleanQuery) ||
-            'группы'.includes(cleanQuery) ||
-            'беседа'.includes(cleanQuery) ||
-            'беседы'.includes(cleanQuery) ||
-            'чат'.includes(cleanQuery));
+          isCategoryKeywordMatch(cleanQuery, ['группа', 'группы', 'беседа', 'беседы', 'group', 'groups']);
 
         return (
-          isChannelQuery ||
-          isGroupQuery ||
-          gc.title.toLowerCase().includes(cleanQuery) ||
-          (gc.description && gc.description.toLowerCase().includes(cleanQuery)) ||
-          (gc.inviteCode && gc.inviteCode.toLowerCase().includes(cleanQuery))
+          isChannelKeyword ||
+          isGroupKeyword ||
+          matchUserText(gc.title, cleanQuery) ||
+          (gc.description ? matchUserText(gc.description, cleanQuery) : false) ||
+          (gc.inviteCode ? matchUserText(gc.inviteCode, cleanQuery) : false)
         );
       })
     : filter === 'channel' || filter === 'group'
@@ -260,23 +237,27 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
       )
     : [];
 
-  // 4. Matched communities in global search
+  // 5. Matched communities in global search (safe keyword checks + title/description/inviteCode)
   const matchedCommunities = isSearching
     ? communities.filter((comm) => {
-        const isCommQuery =
-          'сообщество'.includes(cleanQuery) ||
-          'сообщества'.includes(cleanQuery) ||
-          'клуб'.includes(cleanQuery) ||
-          'группа'.includes(cleanQuery) ||
-          'community'.includes(cleanQuery);
+        const isCommKeyword = isCategoryKeywordMatch(cleanQuery, [
+          'сообщество',
+          'сообщества',
+          'паблик',
+          'паблики',
+          'клуб',
+          'клубы',
+          'community',
+          'communities'
+        ]);
 
         return (
-          isCommQuery ||
-          comm.title.toLowerCase().includes(cleanQuery) ||
-          comm.description.toLowerCase().includes(cleanQuery) ||
-          comm.inviteCode.toLowerCase().includes(cleanQuery) ||
-          comm.ownerName.toLowerCase().includes(cleanQuery) ||
-          (comm.ownerUsername && comm.ownerUsername.toLowerCase().includes(cleanQuery))
+          isCommKeyword ||
+          matchUserText(comm.title, cleanQuery) ||
+          matchUserText(comm.description, cleanQuery) ||
+          matchUserText(comm.inviteCode, cleanQuery) ||
+          matchUserText(comm.ownerName, cleanQuery) ||
+          (comm.ownerUsername ? matchUserText(comm.ownerUsername, cleanQuery) : false)
         );
       })
     : [];
@@ -371,7 +352,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#828282]" />
             <input
               type="text"
-              placeholder="Поиск людей, сообществ, сообщений..."
+              placeholder={isPhoneMode ? "Поиск чатов и людей..." : "Поиск людей, сообществ, сообщений..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#2c2d2e] text-white text-xs rounded-lg pl-8 pr-7 py-1.5 outline-none placeholder-[#828282] border border-transparent focus:border-[#0077FF] focus:bg-[#19191a] transition"
@@ -521,7 +502,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
                       (onlinePeerMap[c.id] && Date.now() - onlinePeerMap[c.id] < 120000) ||
                         (lastMyMsg && lastMyMsg.status === 'read')
                     ));
-              const effectiveUnreadCount = isSelected ? 0 : (c.unreadCount || 0);
+              const effectiveUnreadCount = isSelected || c.type === 'saved' ? 0 : (c.unreadCount || 0);
               const isLastMsgRead = c.type === 'saved' || !lastMsg || lastMsg.status === 'read';
 
               return (
@@ -848,34 +829,28 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
           </div>
         )}
 
-        {/* Empty Search State — Allow instant creation/messaging if custom @username or phone typed */}
+        {/* Empty Search State — Честное состояние поиска (никаких фантомных диалогов) */}
         {isSearching && totalSearchMatches === 0 && (
           <div className="p-5 text-center space-y-3 bg-[#19191a] rounded-2xl border border-[#2e2e2e] m-2">
-            <div className="text-xs font-semibold text-white">
-              По запросу «{searchQuery}» точных совпадений не найдено
+            <div className="w-11 h-11 rounded-full bg-[#252526] border border-[#333334] text-[#71aaeb] flex items-center justify-center mx-auto">
+              <Search className="w-5 h-5" />
             </div>
-            <p className="text-[11px] text-[#828282] leading-relaxed">
-              Вы можете сразу написать пользователю с ником <span className="text-[#71aaeb] font-mono">@{cleanQuery}</span> или создать новый канал / беседу.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {onStartDirectChatWithUser && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onStartDirectChatWithUser({
-                      userId: 'usr_search_' + Date.now(),
-                      displayName: searchQuery.trim().replace(/^@/, ''),
-                      username: cleanQuery.replace(/\s+/g, '_'),
-                      avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanQuery)}&backgroundColor=1e293b`
-                    });
-                    setSearchQuery('');
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Написать @{cleanQuery}</span>
-                </button>
-              )}
+            <div className="space-y-1">
+              <div className="text-xs sm:text-sm font-semibold text-white">
+                По запросу «{searchQuery}» ничего не найдено
+              </div>
+              <p className="text-[11px] text-[#828282] leading-relaxed max-w-xs mx-auto">
+                Пользователь, диалог или сообщество с таким именем, ником или номером телефона не найдены.
+              </p>
+            </div>
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#e1e3e6] cursor-pointer transition"
+              >
+                Очистить поиск
+              </button>
             </div>
           </div>
         )}

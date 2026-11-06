@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CallRecord } from '../../types';
 import { initialContactsList, ContactItem } from './ContactsModal';
+import { matchPhoneNumber, matchUserText } from '../../utils/searchUtils';
 import { 
   X, 
   Phone, 
@@ -56,21 +57,21 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
         : activeTab === 'outgoing'
         ? !c.isMissed
         : true;
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     const matchesSearch =
       !q ||
-      c.contactName.toLowerCase().includes(q) ||
-      (c.contactUsername && c.contactUsername.toLowerCase().includes(q));
+      matchUserText(c.contactName, q) ||
+      (c.contactUsername ? matchUserText(c.contactUsername, q) : false);
     return matchesTab && matchesSearch;
   });
 
   const filteredContacts = initialContactsList.filter((c) => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     if (!q) return true;
     return (
-      c.displayName.toLowerCase().includes(q) ||
-      c.username.toLowerCase().includes(q) ||
-      c.phone.toLowerCase().includes(q)
+      matchUserText(c.displayName, q) ||
+      matchUserText(c.username, q) ||
+      matchPhoneNumber(c.phone, q)
     );
   });
 

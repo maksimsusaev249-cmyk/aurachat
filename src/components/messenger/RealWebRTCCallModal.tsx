@@ -53,6 +53,8 @@ export interface CallSession {
   targetUsername?: string;
   callerUserId?: string;
   callerUsername?: string;
+  isGroupCall?: boolean;
+  groupMembers?: any[];
 }
 
 interface RealWebRTCCallModalProps {
@@ -151,6 +153,8 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   );
   // Screen sharing state & refs
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [screenFitMode, setScreenFitMode] = useState<'contain' | 'cover'>('contain');
+  const [isBrowserFullscreen, setIsBrowserFullscreen] = useState<boolean>(false);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -866,6 +870,18 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     } catch {}
   };
 
+  const handleToggleBrowserFullscreen = () => {
+    try {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+        setIsBrowserFullscreen(true);
+      } else {
+        document.exitFullscreen().catch(() => {});
+        setIsBrowserFullscreen(false);
+      }
+    } catch {}
+  };
+
   const handleToggleScreenShare = async () => {
     if (isScreenSharing) {
       if (screenStreamRef.current) {
@@ -873,6 +889,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         screenStreamRef.current = null;
       }
       setIsScreenSharing(false);
+      setCallNotice('Демонстрация экрана завершена.');
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const channel = new BroadcastChannel('applet_webrtc_call_sync');
@@ -886,16 +903,22 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       } catch {}
     } else {
       try {
+        // Automatically expand to full modal display so the screen is completely shown
+        setIsDesktopFullscreen(true);
+
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-          alert('Демонстрация экрана поддерживается в браузерах на ПК и современных Android устройствах.');
+          setCallNotice('Демонстрация экрана поддерживается в браузерах Chrome, Edge, Safari, Firefox и Android.');
           return;
         }
+
         const stream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: true
         });
+
         screenStreamRef.current = stream;
         setIsScreenSharing(true);
+        setCallNotice('Демонстрация экрана включена. Экран транслируется участникам звонка.');
 
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
@@ -904,6 +927,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
             if (screenStreamRef.current) {
               screenStreamRef.current = null;
             }
+            setCallNotice('Демонстрация экрана завершена.');
           };
         }
 
@@ -918,8 +942,12 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
             channel.close();
           }
         } catch {}
-      } catch (err) {
-        console.warn('Демонстрация экрана отменена пользователем:', err);
+      } catch (err: any) {
+        if (err?.name === 'NotAllowedError') {
+          setCallNotice('Выбор экрана был отменён.');
+        } else {
+          setCallNotice('Разрешение на захват экрана не предоставлено.');
+        }
       }
     }
   };
@@ -943,28 +971,81 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         {/* Main Background Video / Stream (Swappable: Screen Share, Remote or Local) */}
         <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
           {isScreenSharing ? (
-            /* Live Screen Share Stream */
-            <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
+            /* Live Screen Share Stream — Полный обзор экрана с управлением масштабом и участниками */
+            <div className="relative w-full h-full bg-[#05070a] flex items-center justify-center overflow-hidden">
               <video
                 ref={screenVideoRef}
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-contain"
+                className={`w-full h-full transition-all duration-200 ${
+                  screenFitMode === 'contain' ? 'object-contain' : 'object-cover'
+                }`}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/50 pointer-events-none" />
-              <div className="absolute top-16 left-4 px-2.5 py-1 rounded-lg bg-[#0077FF]/90 backdrop-blur-md text-[10px] sm:text-xs font-semibold text-white border border-sky-400/40 flex items-center gap-1.5 shadow-lg z-20">
-                <Monitor className="w-3.5 h-3.5 animate-pulse text-sky-200" />
-                <span>Демонстрация экрана активна</span>
+
+              {/* Верхняя панель управления демонстрацией экрана */}
+              <div className="absolute top-4 sm:top-6 left-4 right-4 flex items-center justify-between gap-2 z-30 pointer-events-auto">
+                <div className="px-3 py-1.5 rounded-xl bg-[#0077FF]/90 backdrop-blur-md text-xs font-semibold text-white border border-sky-400/40 flex items-center gap-2 shadow-xl">
+                  <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
+                  <span className="truncate">Демонстрация экрана активна</span>
+                  {session?.isGroupCall && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/20 font-mono">Конференция</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-black/75 backdrop-blur-md p-1.5 rounded-xl border border-white/10 shadow-xl">
+                  {/* Переключение режима полноэкранного показа (Во весь экран) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDesktopFullscreen(true);
+                      handleToggleBrowserFullscreen();
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#3a3b3c] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
+                    title="Развернуть видео демонстрации на весь экран"
+                  >
+                    {isBrowserFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-sky-400" /> : <Maximize2 className="w-3.5 h-3.5 text-sky-400" />}
+                    <span className="hidden sm:inline">{isBrowserFullscreen ? 'Свернуть' : 'Во весь экран'}</span>
+                  </button>
+
+                  {/* Переключение масштаба: По размеру (без обрезки) / Заполнить весь экран */}
+                  <button
+                    type="button"
+                    onClick={() => setScreenFitMode((prev) => (prev === 'contain' ? 'cover' : 'contain'))}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#3a3b3c] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
+                    title={screenFitMode === 'contain' ? 'Заполнить весь экран' : 'Показать экран полностью (100% без обрезки)'}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">{screenFitMode === 'contain' ? 'Масштаб: 100%' : 'Заполнение'}</span>
+                  </button>
+
+                  {/* Кнопка остановить демонстрацию экрана */}
+                  <button
+                    type="button"
+                    onClick={handleToggleScreenShare}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow"
+                    title="Завершить демонстрацию экрана"
+                  >
+                    <ScreenShare className="w-3.5 h-3.5" />
+                    <span>Остановить</span>
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleToggleScreenShare}
-                className="absolute top-16 right-4 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-500 backdrop-blur-md text-[10px] sm:text-xs font-semibold text-white border border-rose-400/40 flex items-center gap-1 cursor-pointer transition z-20 shadow"
-                title="Остановить трансляцию"
-              >
-                <span>Остановить</span>
-              </button>
+
+              {/* Нижняя панель участников конференции при демонстрации экрана */}
+              {session?.isGroupCall && session.groupMembers && session.groupMembers.length > 0 && (
+                <div className="absolute bottom-24 sm:bottom-28 left-4 right-4 flex items-center justify-center gap-2 z-20 pointer-events-none">
+                  <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-black/65 backdrop-blur-md border border-white/10 pointer-events-auto max-w-full overflow-x-auto scrollbar-thin shadow-2xl">
+                    {session.groupMembers.slice(0, 6).map((m: any, i: number) => (
+                      <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-[#1c1c20] shrink-0 border border-white/5">
+                        <img src={m.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
+                        <span className="text-[11px] text-white truncate max-w-[80px]">{m.displayName?.split(' ')[0] || m.username}</span>
+                        <Mic className="w-3 h-3 text-emerald-400 shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : isVideoEnabled && (!remoteVideoEnabled || mainView === 'local') ? (
             /* Local Video as Main Fullscreen Background when user's camera is ON */

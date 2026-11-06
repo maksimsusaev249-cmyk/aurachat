@@ -677,7 +677,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {chat.inviteCode && (
             <button
               onClick={() => setIsInviteAndQROpen(true)}
-              className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white transition cursor-pointer shrink-0"
+              className="hidden sm:flex p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white transition cursor-pointer shrink-0"
               title="Ссылка и QR-код для приглашения"
             >
               <QrCode className="w-4 h-4" />
@@ -686,34 +686,57 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
           {chat.type !== 'saved' && (
             <>
-              <button
-                onClick={() => {
-                  if (isBlocked) {
-                    triggerToast('Собеседник заблокирован. Звонки недоступны.');
-                    return;
-                  }
-                  onStartCall(false);
-                }}
-                disabled={isBlocked}
-                className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
-                title={isBlocked ? 'Собеседник заблокирован' : 'Аудиозвонок AuraChat'}
-              >
-                <Phone className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => {
-                  if (isBlocked) {
-                    triggerToast('Собеседник заблокирован. Звонки недоступны.');
-                    return;
-                  }
-                  onStartCall(true);
-                }}
-                disabled={isBlocked}
-                className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
-                title={isBlocked ? 'Собеседник заблокирован' : 'Видеозвонок AuraChat'}
-              >
-                <Video className="w-4 h-4" />
-              </button>
+              {(chat.type === 'group' || chat.type === 'channel') ? (
+                <>
+                  <button
+                    onClick={() => onStartCall(true)}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-sm"
+                    title="Начать видеоконференцию с демонстрацией экрана в беседе"
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Конференция</span>
+                  </button>
+
+                  <button
+                    onClick={() => onStartCall(false)}
+                    className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white transition cursor-pointer shrink-0"
+                    title="Голосовой чат беседы"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      if (isBlocked) {
+                        triggerToast('Собеседник заблокирован. Звонки недоступны.');
+                        return;
+                      }
+                      onStartCall(false);
+                    }}
+                    disabled={isBlocked}
+                    className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
+                    title={isBlocked ? 'Собеседник заблокирован' : 'Аудиозвонок AuraChat'}
+                  >
+                    <Phone className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (isBlocked) {
+                        triggerToast('Собеседник заблокирован. Звонки недоступны.');
+                        return;
+                      }
+                      onStartCall(true);
+                    }}
+                    disabled={isBlocked}
+                    className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
+                    title={isBlocked ? 'Собеседник заблокирован' : 'Видеозвонок с демонстрацией экрана'}
+                  >
+                    <Video className="w-4 h-4" />
+                  </button>
+                </>
+              )}
             </>
           )}
 
@@ -1538,10 +1561,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           )}
 
-          <div className="w-full min-w-0 max-w-full px-2 sm:px-3 py-2 bg-[#222222] border-t border-[#2e2e2e] flex items-center gap-1 sm:gap-1.5 shrink-0 relative overflow-visible">
+          <div className="w-full min-w-0 max-w-full px-2 sm:px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] bg-[#222222] border-t border-[#2e2e2e] flex items-center gap-1 sm:gap-1.5 shrink-0 relative overflow-visible">
           {/* Floating Emoji Picker Popover */}
           {showEmojiPicker && (
-            <div className="absolute bottom-12 left-2 bg-[#222222] border border-[#2e2e2e] rounded-2xl p-2.5 shadow-2xl z-30 flex flex-wrap gap-1 w-56">
+            <div className="absolute bottom-14 left-2 bg-[#222222] border border-[#2e2e2e] rounded-2xl p-2.5 shadow-2xl z-30 flex flex-wrap gap-1 w-56">
               {quickEmojis.map((em) => (
                 <button
                   key={em}
@@ -1596,9 +1619,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             />
           </label>
 
-          {/* Music Button */}
+          {/* Music Button — hidden on narrow screens since Paperclip handles audio */}
           <label
-            className="p-1.5 text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
+            className="hidden sm:flex p-1.5 text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
             title="Прикрепить аудиозапись"
           >
             <Music className="w-4 h-4" />
@@ -1622,7 +1645,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            className="w-0 min-w-0 flex-1 bg-[#2c2d2e] text-white text-xs rounded-lg px-3 py-2 outline-none placeholder-[#828282] border border-transparent focus:border-[#0077FF] transition"
+            className="w-0 min-w-0 flex-1 bg-[#2c2d2e] text-white text-xs sm:text-sm rounded-lg px-3 py-2 outline-none placeholder-[#828282] border border-transparent focus:border-[#0077FF] transition"
           />
 
           <button
@@ -1635,33 +1658,37 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <Smile className="w-4 h-4" />
           </button>
 
-          {/* Video Note Button */}
-          <button
-            onClick={onOpenVideoNoteRecorder}
-            className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
-            title="Видеосообщение"
-          >
-            <Disc className="w-4 h-4" />
-          </button>
+          {/* Mobile & Desktop adaptive Send / Voice / Video buttons */}
+          {inputText.trim() ? (
+            <button
+              onClick={handleSend}
+              className="p-2 bg-[#0077FF] hover:bg-[#0066DD] text-white rounded-lg transition cursor-pointer shrink-0"
+              title="Отправить сообщение (Enter)"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+              {/* Video Note Button */}
+              <button
+                onClick={onOpenVideoNoteRecorder}
+                className="hidden xs:flex p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
+                title="Видеосообщение"
+              >
+                <Disc className="w-4 h-4" />
+              </button>
 
-          {/* Voice Note Button */}
-          <button
-            onClick={() => setIsVoiceStudioOpen(true)}
-            onMouseDown={() => setIsVoiceStudioOpen(true)}
-            className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
-            title="Голосовое сообщение"
-          >
-            <Mic className="w-4 h-4" />
-          </button>
-
-          {/* Send Button */}
-          <button
-            onClick={handleSend}
-            className="p-2 bg-[#0077FF] hover:bg-[#0066DD] text-white rounded-lg transition cursor-pointer shrink-0"
-            title="Отправить сообщение (Enter)"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
+              {/* Voice Note Button */}
+              <button
+                onClick={() => setIsVoiceStudioOpen(true)}
+                onMouseDown={() => setIsVoiceStudioOpen(true)}
+                className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
+                title="Голосовое сообщение"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
         </div>
       )}

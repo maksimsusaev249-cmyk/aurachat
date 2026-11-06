@@ -60,7 +60,7 @@ interface CommunityViewModalProps {
   posts?: Post[];
   onClose: () => void;
   onUpdateCommunity: (updated: Community) => void;
-  onPublishCommunityPost: (communityId: string, postData: Partial<Post> & { caption: string }) => void;
+  onPublishCommunityPost: (communityId: string, postData: Partial<Post> & { caption?: string }) => void;
   onSelectChat?: (chat: Chat) => void;
   onOpenUserProfile?: (user: ViewTargetUser) => void;
   onMessageUser?: (user: ViewTargetUser) => void;
@@ -144,10 +144,12 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     title?: string;
   } | null>(null);
 
-  // New post form states with rich attachments
+  // New post form states with rich attachments (up to 10 photos, up to 10 videos)
   const [postCaption, setPostCaption] = useState('');
+  const [postPhotos, setPostPhotos] = useState<string[]>([]);
+  const [postVideos, setPostVideos] = useState<string[]>([]);
   const [postMediaUrl, setPostMediaUrl] = useState('');
-  const [postAttachmentType, setPostAttachmentType] = useState<'none' | 'image' | 'file' | 'music' | 'poll'>('none');
+  const [postAttachmentType, setPostAttachmentType] = useState<'none' | 'image' | 'video' | 'file' | 'music' | 'poll'>('none');
   const [postAttachedFile, setPostAttachedFile] = useState<{ name: string; url: string; size?: string } | null>(null);
   const [postMusic, setPostMusic] = useState<{ id: string; title: string; artist: string; duration: string; genre?: string } | null>(null);
   const [pollQuestion, setPollQuestion] = useState('');
@@ -493,7 +495,10 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   };
 
   const handlePublishPostSubmit = () => {
-    if (!postCaption.trim() && !pollQuestion.trim()) return;
+    const hasMedia = postPhotos.length > 0 || postVideos.length > 0 || postMediaUrl.trim().length > 0;
+    const hasOtherContent = postCaption.trim().length > 0 || pollQuestion.trim().length > 0 || !!postMusic || !!postAttachedFile;
+    if (!hasMedia && !hasOtherContent) return;
+
     playSentSound();
 
     let finalPoll = undefined;
@@ -508,9 +513,19 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
       }
     }
 
+    const allMediaUrls = [
+      ...postPhotos,
+      ...postVideos,
+      ...(postMediaUrl.trim() ? [postMediaUrl.trim()] : [])
+    ];
+    const isVideo = postVideos.length > 0;
+    const primaryMediaUrl = allMediaUrls[0] || undefined;
+
     onPublishCommunityPost(community.id, {
-      caption: postCaption.trim() || pollQuestion.trim(),
-      mediaUrl: postMediaUrl.trim() || undefined,
+      caption: postCaption.trim(), // Текст необязателен!
+      mediaUrl: primaryMediaUrl,
+      images: allMediaUrls,
+      mediaType: isVideo ? 'video' : (allMediaUrls.length > 0 ? 'image' : 'text'),
       attachedFile: postAttachedFile ? { name: postAttachedFile.name, size: postAttachedFile.size || '1.2 MB', url: postAttachedFile.url } : undefined,
       music: postMusic || undefined,
       poll: finalPoll,
@@ -521,6 +536,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     });
 
     setPostCaption('');
+    setPostPhotos([]);
+    setPostVideos([]);
     setPostMediaUrl('');
     setPostAttachedFile(null);
     setPostMusic(null);
@@ -1195,14 +1212,35 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
               </div>
             ) : (
             /* ================================================================= */
-            /* VK 2-COLUMN BODY: СТЕНA СООБЩЕСТВА (СЛЕВА) + БЛОКИ ВК (СПРАВА)    */
+            /* ОСНОВНОЙ БЛОК: ПОДПИСЧИКИ + БЫСТРАЯ ЗАПИСЬ + ВКЛАДКИ + СТЕНА     */
             /* ================================================================= */
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            <div className="space-y-3.5 min-w-0">
               
-              {/* LEFT / MAIN COLUMN: БЫСТРАЯ ЗАПИСЬ + ВКЛАДКИ + СТЕНА */}
-              <div className="lg:col-span-8 space-y-3.5 min-w-0">
+              {/* VK Widget: Подписчики (выше: между «О сообществе» и «Что у вас нового?») */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-[#222222] border border-[#2e2e2e] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#71aaeb]" />
+                    <span className="text-xs sm:text-sm font-semibold text-white">Подписчики</span>
+                  </div>
+                  <span className="text-xs text-[#939393] font-medium">{community.subscribersCount}</span>
+                </div>
+                <div className="flex items-center gap-3.5 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                  {[
+                    { name: ownerDisplayName, avatar: ownerAvatar },
+                    ...sampleContactsForMods.map((c) => ({ name: c.displayName.split(' ')[0], avatar: c.avatarUrl }))
+                  ]
+                    .slice(0, 10)
+                    .map((sub, i) => (
+                      <div key={i} className="flex flex-col items-center text-center gap-1 shrink-0 w-14">
+                        <img src={sub.avatar} alt="" className="w-11 h-11 rounded-full object-cover bg-[#2c2d2e] border border-[#3a3b3c]" />
+                        <span className="text-[11px] text-[#e1e3e6] truncate w-full">{sub.name}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
                 
-                {/* VK Quick Wall Composer ("Что у вас нового?") */}
+              {/* VK Quick Wall Composer ("Что у вас нового?") */}
                 {canManage && (
                   <div className="p-3.5 rounded-2xl bg-[#222222] border border-[#2e2e2e] flex items-center justify-between gap-3">
                     <div
@@ -1381,32 +1419,88 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                                 </p>
                               )}
 
-                              {/* VK Post Media (Uncropped Full View) */}
-                              {post.mediaUrl && (
-                                <div className="rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#141414] flex items-center justify-center">
-                                  {post.mediaType === 'video' ? (
-                                    <video
-                                      src={post.mediaUrl}
-                                      controls
-                                      className="w-full max-h-[540px] object-contain"
-                                    />
-                                  ) : (
-                                    <img
-                                      src={post.mediaUrl}
-                                      alt=""
-                                      onClick={() =>
-                                        setFullscreenMedia({
-                                          url: post.mediaUrl,
-                                          type: 'image',
-                                          title: post.caption || community.title
-                                        })
-                                      }
-                                      className="w-full max-h-[540px] object-contain cursor-zoom-in"
-                                      title="Нажмите, чтобы открыть фото полностью"
-                                    />
-                                  )}
-                                </div>
-                              )}
+                              {/* VK Post Media (Uncropped Full View & Multi-Media Grid for up to 10 photos/videos) */}
+                              {((post.images && post.images.length > 0) || post.mediaUrl) && (() => {
+                                const mediaList: string[] = post.images && post.images.length > 0
+                                  ? post.images
+                                  : (post.mediaUrl ? [post.mediaUrl] : []);
+
+                                if (mediaList.length === 0) return null;
+
+                                if (mediaList.length === 1) {
+                                  const mUrl = mediaList[0];
+                                  const isVid = post.mediaType === 'video' || mUrl.startsWith('data:video/') || /\.(mp4|webm|mov|ogg)($|\?)/i.test(mUrl);
+                                  return (
+                                    <div className="rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#141414] flex items-center justify-center">
+                                      {isVid ? (
+                                        <video
+                                          src={mUrl}
+                                          controls
+                                          className="w-full max-h-[540px] object-contain"
+                                        />
+                                      ) : (
+                                        <img
+                                          src={mUrl}
+                                          alt=""
+                                          onClick={() =>
+                                            setFullscreenMedia({
+                                              url: mUrl,
+                                              type: 'image',
+                                              title: post.caption || community.title
+                                            })
+                                          }
+                                          className="w-full max-h-[540px] object-contain cursor-zoom-in"
+                                          title="Нажмите, чтобы открыть фото полностью"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                // 2+ media items: adaptive VK grid
+                                return (
+                                  <div
+                                    className={`grid gap-1.5 sm:gap-2 rounded-xl overflow-hidden border border-[#2e2e2e] bg-[#141414] p-1.5 ${
+                                      mediaList.length === 2
+                                        ? 'grid-cols-2'
+                                        : mediaList.length === 3
+                                        ? 'grid-cols-3'
+                                        : 'grid-cols-2 sm:grid-cols-3'
+                                    }`}
+                                  >
+                                    {mediaList.map((mUrl, mIdx) => {
+                                      const isVid = mUrl.startsWith('data:video/') || /\.(mp4|webm|mov|ogg)($|\?)/i.test(mUrl);
+                                      return (
+                                        <div
+                                          key={mIdx}
+                                          className="relative aspect-video sm:aspect-square bg-[#19191a] rounded-lg overflow-hidden border border-[#2a2a2b] flex items-center justify-center group"
+                                        >
+                                          {isVid ? (
+                                            <video
+                                              src={mUrl}
+                                              controls
+                                              className="w-full h-full object-cover"
+                                            />
+                                          ) : (
+                                            <img
+                                              src={mUrl}
+                                              alt=""
+                                              onClick={() =>
+                                                setFullscreenMedia({
+                                                  url: mUrl,
+                                                  type: 'image',
+                                                  title: post.caption || community.title
+                                                })
+                                              }
+                                              className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform duration-200"
+                                            />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
 
                               {/* Attached File */}
                               {post.attachedFile && (
@@ -1869,229 +1963,6 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* RIGHT COLUMN: БОКОВАЯ КОЛОНКА В СТИЛЕ ВКОНТАКТЕ (Подписчики, Ссылки/Чаты, Контакты) */}
-              <div className="lg:col-span-4 space-y-3.5 min-w-0">
-                
-                {/* VK Widget 1: Подписчики */}
-                <div className="p-4 rounded-2xl bg-[#222222] border border-[#2e2e2e] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white">Подписчики</span>
-                    <span className="text-xs text-[#939393]">{community.subscribersCount}</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[
-                      { name: ownerDisplayName, avatar: ownerAvatar },
-                      ...sampleContactsForMods.map((c) => ({ name: c.displayName.split(' ')[0], avatar: c.avatarUrl }))
-                    ]
-                      .slice(0, 4)
-                      .map((sub, i) => (
-                        <div key={i} className="flex flex-col items-center text-center gap-1">
-                          <img src={sub.avatar} alt="" className="w-11 h-11 rounded-full object-cover bg-[#2c2d2e]" />
-                          <span className="text-[11px] text-[#e1e3e6] truncate w-full">{sub.name}</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
-                {/* VK Widget 2: Ссылки и беседы сообщества */}
-                <div className="p-4 rounded-2xl bg-[#222222] border border-[#2e2e2e] space-y-2.5">
-                  <span className="text-xs font-semibold text-white block">Ссылки и чаты</span>
-
-                  <div className="p-2.5 rounded-xl bg-[#292929] flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[11px] text-[#939393]">Пригласительная ссылка</div>
-                      <div className="text-xs text-[#71aaeb] font-mono truncate">
-                        aurachat.app/c/{community.inviteCode}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleCopyLink}
-                      className="px-2.5 py-1 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-[11px] font-medium cursor-pointer shrink-0"
-                    >
-                      {isCopied ? 'Скопировано' : 'Копировать'}
-                    </button>
-                  </div>
-
-                  {community.attachedChannelId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const chat = chats.find((c) => c.id === community.attachedChannelId);
-                        if (chat && onSelectChat) {
-                          onSelectChat(chat);
-                          onClose();
-                        }
-                      }}
-                      className="w-full p-2.5 rounded-xl bg-[#292929] hover:bg-[#323233] flex items-center justify-between gap-2 text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-[#0077FF]/20 text-[#71aaeb] flex items-center justify-center shrink-0">
-                          <Radio className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium text-white truncate">
-                            {community.attachedChannelTitle || 'Канал сообщества'}
-                          </div>
-                          <div className="text-[11px] text-[#939393]">Перейти в канал</div>
-                        </div>
-                      </div>
-                      <ExternalLink className="w-3.5 h-3.5 text-[#939393] shrink-0" />
-                    </button>
-                  )}
-
-                  {community.attachedGroupId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const chat = chats.find((c) => c.id === community.attachedGroupId);
-                        if (chat && onSelectChat) {
-                          onSelectChat(chat);
-                          onClose();
-                        }
-                      }}
-                      className="w-full p-2.5 rounded-xl bg-[#292929] hover:bg-[#323233] flex items-center justify-between gap-2 text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-[#0077FF]/20 text-[#71aaeb] flex items-center justify-center shrink-0">
-                          <MessageSquare className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium text-white truncate">
-                            {community.attachedGroupTitle || 'Беседа сообщества'}
-                          </div>
-                          <div className="text-[11px] text-[#939393]">Открыть чат</div>
-                        </div>
-                      </div>
-                      <ExternalLink className="w-3.5 h-3.5 text-[#939393] shrink-0" />
-                    </button>
-                  )}
-                </div>
-
-                {/* VK Widget 3: Контакты (Создатель и Модераторы) */}
-                <div className="p-4 rounded-2xl bg-[#222222] border border-[#2e2e2e] space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-white">
-                      Контакты ({1 + extraModerators.length})
-                    </span>
-                    {canManage && (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={handleToggleHideAdmins}
-                          className="text-[11px] text-[#71aaeb] hover:underline cursor-pointer"
-                        >
-                          {community.hideAdmins ? 'Показать' : 'Скрыть'}
-                        </button>
-                        {isOwner && (
-                          <button
-                            type="button"
-                            onClick={() => setShowModsModal(true)}
-                            className="text-[11px] text-[#71aaeb] hover:underline cursor-pointer ml-1"
-                          >
-                            + Модер
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {community.hideAdmins && !canManage ? (
-                    <div className="text-xs text-[#939393] flex items-center gap-2 py-1">
-                      <EyeOff className="w-4 h-4 shrink-0" />
-                      <span>Контакты скрыты администрацией</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {/* Создатель */}
-                      <div className="flex items-center justify-between gap-2">
-                        <div
-                          onClick={() =>
-                            onOpenUserProfile?.({
-                              id: community.ownerId,
-                              name: ownerDisplayName,
-                              username: ownerUsername,
-                              avatar: ownerAvatar,
-                              bio: `Создатель сообщества «${community.title}»`,
-                              isOnline: true
-                            })
-                          }
-                          className="flex items-center gap-2.5 min-w-0 cursor-pointer group flex-1"
-                        >
-                          <img src={ownerAvatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-white group-hover:text-[#71aaeb] truncate">
-                              {ownerDisplayName}
-                            </div>
-                            <div className="text-[11px] text-[#939393] truncate">Создатель</div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onMessageUser?.({
-                              id: community.ownerId,
-                              name: ownerDisplayName,
-                              username: ownerUsername,
-                              avatar: ownerAvatar
-                            })
-                          }
-                          className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-xs text-[#71aaeb] hover:text-white font-medium cursor-pointer shrink-0"
-                        >
-                          Написать
-                        </button>
-                      </div>
-
-                      {/* Модераторы */}
-                      {extraModerators.map((m) => (
-                        <div key={m.userId} className="flex items-center justify-between gap-2">
-                          <div
-                            onClick={() =>
-                              onOpenUserProfile?.({
-                                id: m.userId,
-                                name: m.displayName,
-                                username: m.username,
-                                avatar: m.avatarUrl,
-                                bio: `${m.customTitle || 'Модератор'} сообщества «${community.title}»`,
-                                isOnline: true
-                              })
-                            }
-                            className="flex items-center gap-2.5 min-w-0 cursor-pointer group flex-1"
-                          >
-                            <img src={m.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium text-white group-hover:text-[#71aaeb] truncate">
-                                {m.displayName}
-                              </div>
-                              <div className="text-[11px] text-[#939393] truncate">
-                                {m.customTitle || 'Модератор'}
-                              </div>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onMessageUser?.({
-                                id: m.userId,
-                                name: m.displayName,
-                                username: m.username,
-                                avatar: m.avatarUrl
-                              })
-                            }
-                            className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-xs text-[#71aaeb] hover:text-white font-medium cursor-pointer shrink-0"
-                          >
-                            Написать
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
             )}
           </div>
@@ -2146,70 +2017,149 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
               </div>
             </div>
 
-            <textarea
-              placeholder="Текст публикации или анонса для сообщества..."
-              value={postCaption}
-              onChange={(e) => setPostCaption(e.target.value)}
-              rows={3}
-              className="w-full bg-[#242f3d] text-xs text-white p-3 rounded-2xl border border-[#283748] outline-none focus:border-[#5288c1] transition"
-            />
+            <div>
+              <textarea
+                placeholder="Текст записи (необязательно при наличии фото или видео)..."
+                value={postCaption}
+                onChange={(e) => setPostCaption(e.target.value)}
+                rows={3}
+                className="w-full bg-[#242f3d] text-xs text-white p-3 rounded-2xl border border-[#283748] outline-none focus:border-[#5288c1] transition placeholder-slate-400"
+              />
+              <span className="text-[10px] text-slate-400 block mt-0.5 px-1">
+                * Текст необязателен: можно опубликовать только фото или видео.
+              </span>
+            </div>
 
-            {/* URL input fallback */}
-            <input
-              type="text"
-              placeholder="Ссылка на медиа или фото (необязательно)..."
-              value={postMediaUrl}
-              onChange={(e) => setPostMediaUrl(e.target.value)}
-              className="w-full bg-[#242f3d] text-xs text-white p-2.5 rounded-xl border border-[#283748] outline-none focus:border-[#5288c1] transition"
-            />
+            {/* Attached Photos Preview Grid (up to 10 photos) */}
+            {postPhotos.length > 0 && (
+              <div className="space-y-1.5 p-2.5 rounded-2xl bg-[#1e2a38] border border-cyan-500/30">
+                <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold px-1">
+                  <span>Прикреплённые фото ({postPhotos.length}/10):</span>
+                  {postPhotos.length < 10 && (
+                    <span className="text-[10px] text-slate-400 font-normal">можно добавить ещё {10 - postPhotos.length}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 max-h-36 overflow-y-auto scrollbar-thin p-0.5">
+                  {postPhotos.map((imgUrl, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-cyan-500/30 group">
+                      <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setPostPhotos((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-1 right-1 p-0.5 rounded-full bg-black/80 hover:bg-rose-600 text-white transition cursor-pointer"
+                        title="Удалить фото"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            {/* Rich Attachment Toolbar: Фото, Видео, Файл, Музыка, Опрос */}
+            {/* Attached Videos Preview Grid (up to 10 videos/clips) */}
+            {postVideos.length > 0 && (
+              <div className="space-y-1.5 p-2.5 rounded-2xl bg-[#1e2a38] border border-indigo-500/30">
+                <div className="flex items-center justify-between text-[11px] text-indigo-300 font-bold px-1">
+                  <span>Прикреплённые видео / ролики ({postVideos.length}/10):</span>
+                  {postVideos.length < 10 && (
+                    <span className="text-[10px] text-slate-400 font-normal">можно добавить ещё {10 - postVideos.length}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 max-h-36 overflow-y-auto scrollbar-thin p-0.5">
+                  {postVideos.map((vidUrl, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-indigo-500/30 bg-black group flex items-center justify-center">
+                      <video src={vidUrl} className="w-full h-full object-cover opacity-80" />
+                      <Video className="w-4 h-4 text-white absolute pointer-events-none drop-shadow" />
+                      <button
+                        type="button"
+                        onClick={() => setPostVideos((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-1 right-1 p-0.5 rounded-full bg-black/80 hover:bg-rose-600 text-white transition cursor-pointer"
+                        title="Удалить видео"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Rich Attachment Toolbar: Фото (до 10), Видео (до 10), Файл, Музыка, Опрос */}
             <div className="space-y-2">
               <span className="text-[11px] text-slate-400 font-bold block">Прикрепить к посту:</span>
               <div className="grid grid-cols-5 gap-1.5 bg-[#1e2a38] p-1.5 rounded-2xl border border-[#283748]">
-                {/* 1. Photo */}
+                {/* 1. Photos (up to 10) */}
                 <label
                   className={`p-2 rounded-xl border text-[10px] font-bold flex flex-col items-center gap-1 cursor-pointer transition ${
-                    postAttachmentType === 'image' || postMediaUrl
+                    postPhotos.length > 0
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
                       : 'bg-[#17212b] text-slate-300 hover:text-white border-transparent'
                   }`}
+                  title="Прикрепить до 10 фотографий"
                 >
                   <ImageIcon className="w-4 h-4 text-cyan-400" />
-                  <span>Фото</span>
+                  <span>Фото {postPhotos.length > 0 ? `(${postPhotos.length}/10)` : '(до 10)'}</span>
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
+                    disabled={postPhotos.length >= 10}
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      const remaining = Math.max(0, 10 - postPhotos.length);
+                      const sliceFiles = Array.from(files).slice(0, remaining);
+                      sliceFiles.forEach((file) => {
                         const reader = new FileReader();
                         reader.onload = (ev) => {
                           if (ev.target?.result) {
-                            setPostMediaUrl(ev.target.result as string);
-                            setPostAttachmentType('image');
+                            setPostPhotos((prev) => prev.length < 10 ? [...prev, ev.target!.result as string] : prev);
                           }
                         };
                         reader.readAsDataURL(file);
-                      }
+                      });
+                      e.target.value = '';
                     }}
                     className="hidden"
                   />
                 </label>
 
-                {/* 2. Video */}
-                <button
-                  type="button"
-                  onClick={() => setPostAttachmentType(postAttachmentType === 'image' ? 'none' : 'image')}
+                {/* 2. Videos (up to 10) */}
+                <label
                   className={`p-2 rounded-xl border text-[10px] font-bold flex flex-col items-center gap-1 cursor-pointer transition ${
-                    postAttachmentType === 'image'
+                    postVideos.length > 0
                       ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
                       : 'bg-[#17212b] text-slate-300 hover:text-white border-transparent'
                   }`}
+                  title="Прикрепить до 10 видеороликов"
                 >
                   <Video className="w-4 h-4 text-indigo-400" />
-                  <span>Видео</span>
-                </button>
+                  <span>Видео {postVideos.length > 0 ? `(${postVideos.length}/10)` : '(до 10)'}</span>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    multiple
+                    disabled={postVideos.length >= 10}
+                    onChange={(e) => {
+                      const files = e.target.files;
+                      if (!files || files.length === 0) return;
+                      const remaining = Math.max(0, 10 - postVideos.length);
+                      const sliceFiles = Array.from(files).slice(0, remaining);
+                      sliceFiles.forEach((file) => {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          if (ev.target?.result) {
+                            setPostVideos((prev) => prev.length < 10 ? [...prev, ev.target!.result as string] : prev);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                      e.target.value = '';
+                    }}
+                    className="hidden"
+                  />
+                </label>
 
                 {/* 3. Document File */}
                 <label
@@ -2242,7 +2192,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (postAttachmentType === 'music') {
+                    if (postAttachmentType === 'music' || postMusic) {
+                      setPostMusic(null);
                       setPostAttachmentType('none');
                     } else {
                       setPostMusic({
@@ -2312,12 +2263,21 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
               </div>
             )}
 
+            {/* Submit button: active if there is text OR at least 1 photo OR at least 1 video OR poll OR music OR file */}
             <button
               onClick={handlePublishPostSubmit}
-              disabled={!postCaption.trim() && !pollQuestion.trim()}
-              className="w-full py-3 rounded-2xl bg-[#5288c1] hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg transition cursor-pointer"
+              disabled={
+                !postCaption.trim() &&
+                postPhotos.length === 0 &&
+                postVideos.length === 0 &&
+                !pollQuestion.trim() &&
+                !postMusic &&
+                !postAttachedFile &&
+                !postMediaUrl.trim()
+              }
+              className="w-full py-3 rounded-2xl bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg transition cursor-pointer"
             >
-              Опубликовать пост →
+              Опубликовать запись {postPhotos.length > 0 || postVideos.length > 0 ? `(${postPhotos.length + postVideos.length} медиа)` : ''} →
             </button>
           </div>
         </div>

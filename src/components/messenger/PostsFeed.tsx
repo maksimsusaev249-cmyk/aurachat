@@ -36,7 +36,8 @@ import {
   Globe,
   Clock,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  MessageSquare
 } from 'lucide-react';
 import { playPostMusicTrack, stopPostMusicTrack, playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
@@ -318,11 +319,11 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
       ref={containerRef}
       className="flex-1 h-full bg-[#141414] overflow-y-auto p-3 sm:p-5 flex flex-col items-center select-none text-[#e1e3e6] scrollbar-thin relative min-h-0 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]"
     >
-      <div className="w-full max-w-xl space-y-3.5 pb-16">
+      <div className="w-full max-w-xl space-y-3.5 pb-28 sm:pb-20">
         {/* VKontakte Newsfeed Top Bar & Quick Composer ("Что у вас нового?") */}
         <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl p-3.5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-bold text-sm text-white">AuraChat · Новости</h2>
               <span className="px-2 py-0.5 rounded-md bg-[#2c2d2e] text-[11px] text-[#939393]">
                 Лента и сообщества
@@ -333,29 +334,34 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Responsive Buttons Row: 3 equal buttons on mobile, compact row on desktop */}
+            <div className="grid grid-cols-3 gap-1.5 w-full sm:w-auto sm:flex sm:items-center sm:gap-2">
               <button
                 onClick={handleManualRefresh}
-                className="h-8 px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold transition text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
+                className="h-8 px-2 sm:px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[11px] sm:text-xs font-semibold transition text-[#e1e3e6] flex items-center justify-center gap-1.5 cursor-pointer"
                 title="Обновить ленту"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-[#71aaeb] ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span>Обновить</span>
+                <RefreshCw className={`w-3.5 h-3.5 text-[#71aaeb] shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="truncate">Обновить</span>
               </button>
               {onOpenStudio && (
                 <button
                   onClick={onOpenStudio}
-                  className="h-8 px-3 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-xs font-semibold transition text-white flex items-center gap-1 cursor-pointer shadow-sm"
+                  className="h-8 px-2 sm:px-3 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-[11px] sm:text-xs font-semibold transition text-white flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                  title="Опубликовать запись"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Опубликовать</span>
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Опубликовать</span>
                 </button>
               )}
               <button
                 onClick={onBackToChats}
-                className="h-8 px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#71aaeb] hover:text-white transition cursor-pointer flex items-center"
+                className="h-8 px-2 sm:px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[11px] sm:text-xs font-semibold text-[#71aaeb] hover:text-white transition cursor-pointer flex items-center justify-center gap-1"
+                title="Перейти в мессенджер"
               >
-                Мессенджер
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Чаты</span>
               </button>
             </div>
           </div>
@@ -764,20 +770,10 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 </div>
               )}
 
-              {/* Media Carousel Area */}
+              {/* Media Carousel Area — Full Uncropped Mobile & Desktop Display */}
               {hasMedia && (
                 <div 
-                  className={`relative bg-black overflow-hidden group w-full ${
-                    post.aspectRatio === '3:4'
-                      ? 'aspect-[3/4] max-h-[520px]'
-                      : post.aspectRatio === '9:16' || post.aspectRatio === 'full'
-                      ? 'aspect-[9/16] max-h-[520px]'
-                      : post.aspectRatio === '4:5'
-                      ? 'aspect-[4/5] max-h-[480px]'
-                      : post.aspectRatio === '16:9'
-                      ? 'aspect-video'
-                      : 'aspect-square'
-                  }`}
+                  className="relative bg-[#0c0c0e] overflow-hidden group w-full flex items-center justify-center min-h-[220px] max-h-[580px] rounded-xl sm:rounded-2xl"
                 >
                   {isVideoMedia(imagesList[currentSlide], post.mediaType) ? (
                     <video
@@ -785,13 +781,14 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                       controls
                       playsInline
                       preload="metadata"
-                      className="w-full h-full object-cover select-none"
+                      className="max-h-[580px] w-full object-contain select-none bg-black"
                     />
                   ) : (
                     <img
                       src={imagesList[currentSlide]}
                       alt=""
-                      className="w-full h-full object-cover select-none"
+                      className="max-h-[580px] w-full object-contain select-none"
+                      loading="lazy"
                     />
                   )}
 
@@ -972,18 +969,18 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 )}
 
                 {/* VKontakte Pill Actions Row (Нравится, Комментарий, Поделиться, Закладка + Просмотры) */}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between pt-1 gap-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={() => toggleLike(post.id)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition cursor-pointer shrink-0 ${
                         (post.isLiked !== undefined ? post.isLiked : likedPosts[post.id])
                           ? 'bg-rose-500/20 text-rose-400'
                           : 'bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-[#e1e3e6]'
                       }`}
                     >
                       <Heart
-                        className={`w-4 h-4 ${
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
                           (post.isLiked !== undefined ? post.isLiked : likedPosts[post.id]) ? 'fill-rose-500 text-rose-500' : ''
                         }`}
                       />
@@ -995,36 +992,36 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                       </span>
                     </button>
 
-                    <button className="px-3.5 py-1.5 rounded-full bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-[#e1e3e6] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer">
-                      <MessageCircle className="w-4 h-4" />
+                    <button className="px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-[#e1e3e6] text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition cursor-pointer shrink-0">
+                      <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       <span>{post.comments.length}</span>
                     </button>
 
                     <button 
                       onClick={() => handleSharePost(post)}
-                      className="px-3.5 py-1.5 rounded-full bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-[#e1e3e6] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                      className="p-1.5 sm:px-3.5 sm:py-1.5 rounded-full bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-[#e1e3e6] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0"
                       title="Поделиться записью"
                     >
-                      <Share2 className="w-4 h-4" />
+                      <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1 text-xs text-[#828282]" title="Просмотры записи">
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <div className="flex items-center gap-1 text-[11px] sm:text-xs text-[#828282]" title="Просмотры записи">
                       <Eye className="w-3.5 h-3.5" />
                       <span>{post.viewsCount ?? 0}</span>
                     </div>
 
                     <button 
                       onClick={() => toggleBookmark(post.id)}
-                      className={`p-2 rounded-full transition cursor-pointer ${
+                      className={`p-1.5 sm:p-2 rounded-full transition cursor-pointer shrink-0 ${
                         savedPostIds[post.id]
                           ? 'text-[#0077FF] bg-[#0077FF]/15'
                           : 'text-[#828282] hover:text-[#e1e3e6] hover:bg-[#2c2d2e]'
                       }`}
                       title="В закладки"
                     >
-                      <Bookmark className={`w-4 h-4 ${savedPostIds[post.id] ? 'fill-current' : ''}`} />
+                      <Bookmark className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${savedPostIds[post.id] ? 'fill-current' : ''}`} />
                     </button>
                   </div>
                 </div>

@@ -12,6 +12,7 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { playSentSound } from '../../utils/audioUtils';
+import { matchPhoneNumber, matchUserText } from '../../utils/searchUtils';
 
 export interface ContactItem {
   userId: string;
@@ -135,12 +136,12 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
 
   const filteredContacts = allMergedContacts.filter((c) => {
     if (filterTab === 'online' && !c.isOnline) return false;
-    const q = searchQuery.trim().toLowerCase().replace(/^@/, '');
+    const q = searchQuery.trim();
     if (!q) return true;
     return (
-      c.displayName.toLowerCase().includes(q) ||
-      c.username.toLowerCase().includes(q) ||
-      c.phone.toLowerCase().includes(q)
+      matchUserText(c.displayName, q) ||
+      matchUserText(c.username, q) ||
+      matchPhoneNumber(c.phone, q)
     );
   });
 
