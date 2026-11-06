@@ -486,7 +486,17 @@ export function subscribeToCloudPlatformState(
 }
 
 export interface CallSignalPayload {
-  type: 'CALL_OFFER' | 'CALL_ANSWERED' | 'CALL_REJECTED' | 'CALL_ENDED' | 'CALL_CANCELLED' | 'VIDEO_TOGGLE';
+  type: 
+    | 'CALL_OFFER' 
+    | 'CALL_ANSWERED' 
+    | 'CALL_REJECTED' 
+    | 'CALL_ENDED' 
+    | 'CALL_CANCELLED' 
+    | 'VIDEO_TOGGLE' 
+    | 'SCREEN_SHARE_STATE'
+    | 'WEBRTC_OFFER'
+    | 'WEBRTC_ANSWER'
+    | 'WEBRTC_ICE';
   callId: string;
   callerId?: string;
   callerName?: string;
@@ -499,6 +509,9 @@ export interface CallSignalPayload {
   quickResponse?: string;
   isVideo?: boolean;
   isVideoEnabled?: boolean;
+  isScreenSharing?: boolean;
+  sdp?: string;
+  candidate?: any;
   timestamp: number;
 }
 

@@ -147,16 +147,21 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   });
 
   // Cross-tab call synchronization channel
+  // Cross-tab & Cross-device WebRTC call synchronization channel & refs
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState<boolean>(false);
   const [mainView, setMainView] = useState<'remote' | 'local'>(
     session?.isVideo ? 'local' : 'remote'
   );
   // Screen sharing state & refs
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
+  const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState<boolean>(false);
   const [screenFitMode, setScreenFitMode] = useState<'contain' | 'cover'>('contain');
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState<boolean>(false);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
 
   const voicemailTimeoutRef = useRef<any>(null);
   const callStatusRef = useRef<CallStatus>('ringing');
@@ -173,11 +178,84 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     setMainView((prev) => (prev === 'remote' ? 'local' : 'remote'));
   };
 
+  // Helper to broadcast call signals to BOTH BroadcastChannel and Cloud Firestore
+  const broadcastSignal = (payload: any) => {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('applet_webrtc_call_sync');
+        channel.postMessage(payload);
+        channel.close();
+      }
+    } catch {}
+
+    if (payload.callId) {
+      publishCallSignalToCloud({
+        ...payload,
+        timestamp: Date.now()
+      }).catch(() => {});
+    }
+  };
+
+  // Initialize WebRTC RTCPeerConnection with STUN servers
+  const initPeerConnection = () => {
+    if (peerConnectionRef.current) return peerConnectionRef.current;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
+    });
+
+    if (!remoteStreamRef.current) {
+      remoteStreamRef.current = new MediaStream();
+    }
+
+    // When remote media track (audio, camera, or screen share) arrives from other participant
+    pc.ontrack = (event) => {
+      if (event.streams && event.streams[0]) {
+        remoteStreamRef.current = event.streams[0];
+      } else if (event.track) {
+        if (!remoteStreamRef.current) remoteStreamRef.current = new MediaStream();
+        remoteStreamRef.current.addTrack(event.track);
+      }
+
+      if (remoteVideoRef.current && remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+      setRemoteVideoEnabled(true);
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && session?.callId) {
+        broadcastSignal({
+          type: 'WEBRTC_ICE',
+          callId: session.callId,
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
+        });
+      }
+    };
+
+    // Add local media tracks to peer connection
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        try {
+          pc.addTrack(track, localStreamRef.current!);
+        } catch {}
+      });
+    }
+
+    peerConnectionRef.current = pc;
+    return pc;
+  };
+
   useEffect(() => {
     if (!session) return;
     let channel: BroadcastChannel | null = null;
 
-    const handleSignal = (data: { type: string; callId?: string; isVideoEnabled?: boolean; quickResponse?: string }) => {
+    const handleSignal = (data: any) => {
       if (!data || (data.callId && session.callId && data.callId !== session.callId)) return;
 
       if (data.type === 'CALL_ANSWERED' && session.direction === 'outgoing') {
@@ -189,7 +267,61 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         playSentSound();
         callStatusRef.current = 'connected';
         setCallStatus('connected');
-        startLocalMedia(selectedMicId);
+        startLocalMedia(selectedMicId).then(() => {
+          // Caller generates WebRTC SDP Offer
+          const pc = initPeerConnection();
+          pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+            .then((offer) => pc.setLocalDescription(offer))
+            .then(() => {
+              broadcastSignal({
+                type: 'WEBRTC_OFFER',
+                callId: session.callId,
+                sdp: pc.localDescription?.sdp
+              });
+            })
+            .catch(() => {});
+        });
+      }
+
+      if (data.type === 'WEBRTC_OFFER' && data.sdp) {
+        const pc = initPeerConnection();
+        pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }))
+          .then(() => pc.createAnswer())
+          .then((answer) => pc.setLocalDescription(answer))
+          .then(() => {
+            broadcastSignal({
+              type: 'WEBRTC_ANSWER',
+              callId: session.callId,
+              sdp: pc.localDescription?.sdp
+            });
+          })
+          .catch(() => {});
+      }
+
+      if (data.type === 'WEBRTC_ANSWER' && data.sdp) {
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp })).catch(() => {});
+        }
+      }
+
+      if (data.type === 'WEBRTC_ICE' && data.candidate) {
+        if (peerConnectionRef.current) {
+          try {
+            peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(() => {});
+          } catch {}
+        }
+      }
+
+      if (data.type === 'SCREEN_SHARE_STATE') {
+        const isSharing = Boolean(data.isScreenSharing);
+        setIsRemoteScreenSharing(isSharing);
+        if (isSharing) {
+          setIsDesktopFullscreen(true);
+          setMainView('remote');
+          setCallNotice(`Абонент ${session.contactName} включил демонстрацию экрана.`);
+        } else {
+          setCallNotice(`Абонент ${session.contactName} завершил демонстрацию экрана.`);
+        }
       }
 
       if (data.type === 'VIDEO_TOGGLE') {
@@ -258,6 +390,28 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       unsubCloudSignals();
     };
   }, [session]);
+
+  // Ensure media streams are continuously attached to HTML video elements on re-render or view switch
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+  }, [remoteVideoEnabled, isRemoteScreenSharing, mainView]);
+
+  useEffect(() => {
+    if (screenVideoRef.current && screenStreamRef.current) {
+      screenVideoRef.current.srcObject = screenStreamRef.current;
+      screenVideoRef.current.play().catch(() => {});
+    }
+  }, [isScreenSharing]);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+  }, [isVideoEnabled, mainView]);
 
   // Start real webcam & microphone stream with Web Audio API AnalyserNode
   const startLocalMedia = async (micDeviceId?: string, forceVideo?: boolean) => {
@@ -400,9 +554,23 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       screenStreamRef.current = null;
     }
     setIsScreenSharing(false);
+    setIsRemoteScreenSharing(false);
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      try {
+        peerConnectionRef.current.close();
+      } catch {}
+      peerConnectionRef.current = null;
+    }
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach((t) => t.stop());
+      remoteStreamRef.current = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
     }
     if (audioCtxRef.current) {
       try {
@@ -423,6 +591,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     setMicLevel(0);
     setMicConnected(false);
     setCameraConnected(false);
+    setRemoteVideoEnabled(false);
   };
 
   // Answer call / Connect call
@@ -441,26 +610,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     if (isVideoEnabled && !remoteVideoEnabled) {
       setMainView('local');
     }
-    startLocalMedia(selectedMicId, isVideoEnabled);
+    startLocalMedia(selectedMicId, isVideoEnabled).then(() => {
+      initPeerConnection();
+    });
 
-    try {
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const channel = new BroadcastChannel('applet_webrtc_call_sync');
-        channel.postMessage({
-          type: 'CALL_ANSWERED',
-          callId: session?.callId
-        });
-        channel.close();
-      }
-    } catch {}
-
-    if (session?.callId) {
-      publishCallSignalToCloud({
-        type: 'CALL_ANSWERED',
-        callId: session.callId,
-        timestamp: Date.now()
-      });
-    }
+    broadcastSignal({
+      type: 'CALL_ANSWERED',
+      callId: session?.callId
+    });
   };
 
   // Quick response handler: Точка Б сбрасывает и отправляет быстрый ответ
@@ -837,37 +994,53 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     if (nextMuted) setMicLevel(0);
   };
 
-  const handleToggleVideo = () => {
+  const handleToggleVideo = async () => {
     const nextVideo = !isVideoEnabled;
     setIsVideoEnabled(nextVideo);
     if (nextVideo) {
       if (!remoteVideoEnabled) {
         setMainView('local');
       }
-      if (!cameraConnected) {
-        startLocalMedia(selectedMicId, true);
-      } else if (localStreamRef.current) {
+      await startLocalMedia(selectedMicId, true);
+      const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+      if (cameraTrack) {
+        const pc = initPeerConnection();
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(cameraTrack).catch(() => {});
+        } else {
+          try {
+            pc.addTrack(cameraTrack, localStreamRef.current!);
+            pc.createOffer().then((offer) => pc.setLocalDescription(offer)).then(() => {
+              broadcastSignal({
+                type: 'WEBRTC_OFFER',
+                callId: session?.callId,
+                sdp: pc.localDescription?.sdp
+              });
+            }).catch(() => {});
+          } catch {}
+        }
+      }
+    } else {
+      if (localStreamRef.current) {
         localStreamRef.current.getVideoTracks().forEach((t) => {
-          t.enabled = true;
+          t.enabled = false;
+          t.stop();
         });
       }
-    } else if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((t) => {
-        t.enabled = false;
-      });
+      if (peerConnectionRef.current) {
+        const sender = peerConnectionRef.current.getSenders().find((s) => s.track && s.track.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(null).catch(() => {});
+        }
+      }
     }
 
-    try {
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const channel = new BroadcastChannel('applet_webrtc_call_sync');
-        channel.postMessage({
-          type: 'VIDEO_TOGGLE',
-          callId: session?.callId,
-          isVideoEnabled: nextVideo
-        });
-        channel.close();
-      }
-    } catch {}
+    broadcastSignal({
+      type: 'VIDEO_TOGGLE',
+      callId: session?.callId,
+      isVideoEnabled: nextVideo
+    });
   };
 
   const handleToggleBrowserFullscreen = () => {
@@ -890,20 +1063,22 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       }
       setIsScreenSharing(false);
       setCallNotice('Демонстрация экрана завершена.');
-      try {
-        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-          const channel = new BroadcastChannel('applet_webrtc_call_sync');
-          channel.postMessage({
-            type: 'SCREEN_SHARE_TOGGLE',
-            callId: session?.callId,
-            isScreenSharing: false
-          });
-          channel.close();
+
+      if (peerConnectionRef.current) {
+        const sender = peerConnectionRef.current.getSenders().find((s) => s.track && s.track.kind === 'video');
+        const cameraTrack = isVideoEnabled && localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] || null : null;
+        if (sender) {
+          sender.replaceTrack(cameraTrack).catch(() => {});
         }
-      } catch {}
+      }
+
+      broadcastSignal({
+        type: 'SCREEN_SHARE_STATE',
+        callId: session?.callId,
+        isScreenSharing: false
+      });
     } else {
       try {
-        // Automatically expand to full modal display so the screen is completely shown
         setIsDesktopFullscreen(true);
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
@@ -920,28 +1095,40 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         setIsScreenSharing(true);
         setCallNotice('Демонстрация экрана включена. Экран транслируется участникам звонка.');
 
-        const videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) {
-          videoTrack.onended = () => {
-            setIsScreenSharing(false);
-            if (screenStreamRef.current) {
-              screenStreamRef.current = null;
-            }
-            setCallNotice('Демонстрация экрана завершена.');
-          };
+        if (screenVideoRef.current) {
+          screenVideoRef.current.srcObject = stream;
+          screenVideoRef.current.play().catch(() => {});
         }
 
-        try {
-          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-            const channel = new BroadcastChannel('applet_webrtc_call_sync');
-            channel.postMessage({
-              type: 'SCREEN_SHARE_TOGGLE',
-              callId: session?.callId,
-              isScreenSharing: true
-            });
-            channel.close();
+        const screenTrack = stream.getVideoTracks()[0];
+        if (screenTrack) {
+          screenTrack.onended = () => {
+            handleToggleScreenShare();
+          };
+
+          const pc = initPeerConnection();
+          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack).catch(() => {});
+          } else {
+            try {
+              pc.addTrack(screenTrack, stream);
+              pc.createOffer().then((offer) => pc.setLocalDescription(offer)).then(() => {
+                broadcastSignal({
+                  type: 'WEBRTC_OFFER',
+                  callId: session?.callId,
+                  sdp: pc.localDescription?.sdp
+                });
+              }).catch(() => {});
+            } catch {}
           }
-        } catch {}
+        }
+
+        broadcastSignal({
+          type: 'SCREEN_SHARE_STATE',
+          callId: session?.callId,
+          isScreenSharing: true
+        });
       } catch (err: any) {
         if (err?.name === 'NotAllowedError') {
           setCallNotice('Выбор экрана был отменён.');
@@ -970,14 +1157,14 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         
         {/* Main Background Video / Stream (Swappable: Screen Share, Remote or Local) */}
         <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
-          {isScreenSharing ? (
+          {isScreenSharing || isRemoteScreenSharing ? (
             /* Live Screen Share Stream — Полный обзор экрана с управлением масштабом и участниками */
             <div className="relative w-full h-full bg-[#05070a] flex items-center justify-center overflow-hidden">
               <video
-                ref={screenVideoRef}
+                ref={isScreenSharing ? screenVideoRef : remoteVideoRef}
                 autoPlay
                 playsInline
-                muted
+                muted={isScreenSharing}
                 className={`w-full h-full transition-all duration-200 ${
                   screenFitMode === 'contain' ? 'object-contain' : 'object-cover'
                 }`}
@@ -987,7 +1174,9 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
               <div className="absolute top-4 sm:top-6 left-4 right-4 flex items-center justify-between gap-2 z-30 pointer-events-auto">
                 <div className="px-3 py-1.5 rounded-xl bg-[#0077FF]/90 backdrop-blur-md text-xs font-semibold text-white border border-sky-400/40 flex items-center gap-2 shadow-xl">
                   <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
-                  <span className="truncate">Демонстрация экрана активна</span>
+                  <span className="truncate">
+                    {isScreenSharing ? 'Демонстрация вашего экрана активна' : `Демонстрация экрана: ${session.contactName}`}
+                  </span>
                   {session?.isGroupCall && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] bg-white/20 font-mono">Конференция</span>
                   )}
@@ -1019,16 +1208,18 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                     <span className="hidden sm:inline">{screenFitMode === 'contain' ? 'Масштаб: 100%' : 'Заполнение'}</span>
                   </button>
 
-                  {/* Кнопка остановить демонстрацию экрана */}
-                  <button
-                    type="button"
-                    onClick={handleToggleScreenShare}
-                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow"
-                    title="Завершить демонстрацию экрана"
-                  >
-                    <ScreenShare className="w-3.5 h-3.5" />
-                    <span>Остановить</span>
-                  </button>
+                  {/* Кнопка остановить демонстрацию экрана (если транслирует текущий пользователь) */}
+                  {isScreenSharing && (
+                    <button
+                      type="button"
+                      onClick={handleToggleScreenShare}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition shadow"
+                      title="Завершить демонстрацию экрана"
+                    >
+                      <ScreenShare className="w-3.5 h-3.5" />
+                      <span>Остановить</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1073,16 +1264,18 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
               </button>
             </div>
           ) : remoteVideoEnabled ? (
-            /* Remote Video as Main Background */
+            /* Real Live Remote Video as Main Background */
             <div className="relative w-full h-full">
-              <img
-                src={session.avatarUrl}
-                alt="Remote camera"
-                className="w-full h-full object-cover filter brightness-95"
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/60" />
-              <div className="absolute top-16 left-4 px-2 py-0.5 rounded-md bg-black/70 text-[10px] font-mono text-cyan-300 border border-cyan-500/30">
-                {session.contactName} (Видео)
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" />
+              <div className="absolute top-16 left-4 px-2 py-0.5 rounded-md bg-black/70 text-[10px] font-mono text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span>{session.contactName} (Видео)</span>
               </div>
             </div>
           ) : (
@@ -1094,8 +1287,8 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
           )}
         </div>
 
-        {/* PiP Corner Video (Shown only when BOTH local and remote cameras are active) */}
-        {isVideoEnabled && remoteVideoEnabled && (
+        {/* PiP Corner Video (Shown when BOTH local and remote video/streams are active) */}
+        {((isVideoEnabled && remoteVideoEnabled) || (isRemoteScreenSharing && isVideoEnabled)) && (
           <div
             onClick={handleSwapCameras}
             className="absolute top-16 right-4 z-20 w-28 h-40 md:w-44 md:h-64 rounded-2xl overflow-hidden border-2 border-amber-400/80 shadow-2xl bg-black group cursor-pointer transition hover:scale-105"
@@ -1110,9 +1303,10 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 className="w-full h-full object-cover -scale-x-100"
               />
             ) : (
-              <img
-                src={session.avatarUrl}
-                alt="Remote"
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
                 className="w-full h-full object-cover"
               />
             )}
