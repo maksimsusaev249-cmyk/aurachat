@@ -26,7 +26,9 @@ import {
   Globe,
   Lock,
   MessageSquare,
-  UserPlus
+  UserPlus,
+  BookOpen,
+  Smartphone
 } from 'lucide-react';
 
 interface TelegramSidebarProps {
@@ -51,6 +53,8 @@ interface TelegramSidebarProps {
   onOpenPlusMenu?: () => void;
   isPhoneMode?: boolean;
   onTogglePhoneMode?: () => void;
+  deviceViewMode?: 'auto' | 'duo' | 'folded';
+  onCycleDeviceMode?: () => void;
   allUsers?: User[];
   globalCatalogChats?: Chat[];
   communities?: Community[];
@@ -95,6 +99,8 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
   onOpenMainMenu,
   onOpenPlusMenu,
   isPhoneMode = false,
+  deviceViewMode = 'auto',
+  onCycleDeviceMode,
   allUsers = [],
   globalCatalogChats = [],
   communities = [],
@@ -124,7 +130,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
   const visibleStories = stories.filter((st) => {
     if (st.userId === currentUser.id) return true;
     const isInMyDirectChats = chats.some(
-      (c) => c.type === 'direct' && c.members.some((m) => m.userId === st.userId)
+      (c) => c.type === 'direct' && !c.isSecretChat && c.members.some((m) => m.userId === st.userId)
     );
     return isInMyDirectChats || Boolean(followingUserIds[st.userId]);
   });
@@ -147,8 +153,15 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
     return map;
   }, [globalUsersDirectory]);
 
-  // 2. Filter user's existing chats (with name, username, phone, and safe keyword checks)
+  // 2. Filter user's existing chats (Secret chats are HIDDEN from the normal list and only revealed if user enters the exact 6-digit PIN in search!)
   const filteredChats = chats.filter((c) => {
+    if (c.isSecretChat) {
+      if (isSearching && c.secretPin && cleanQuery === c.secretPin.toLowerCase()) {
+        return true;
+      }
+      return false;
+    }
+
     if (!isSearching) {
       if (filter === 'direct') {
         if (c.type !== 'direct' && c.type !== 'saved') return false;
@@ -270,19 +283,21 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
 
   return (
     <div className={`h-full flex flex-col bg-[#222222] border-r border-[#2e2e2e] select-none text-[#e1e3e6] shrink-0 min-h-0 min-w-0 max-w-full overflow-hidden relative ${
-      isPhoneMode
+      deviceViewMode === 'duo'
+        ? 'w-full'
+        : deviceViewMode === 'folded' || isPhoneMode
         ? isMobileChatOpen
           ? 'hidden'
           : 'w-full'
         : isMobileChatOpen
-        ? 'hidden md:flex md:w-72 lg:w-80 xl:w-96'
-        : 'w-full md:w-72 lg:w-80 xl:w-96'
+        ? 'hidden min-[620px]:flex min-[620px]:w-[44%] md:w-72 lg:w-80 xl:w-96'
+        : 'w-full min-[620px]:w-[44%] md:w-72 lg:w-80 xl:w-96'
     }`}>
-      {/* Top Header & Search (VKontakte & Telegram Clean Mobile/Desktop Header) */}
+      {/* Top Header & Search (VKontakte & Telegram Clean Mobile/Desktop/Foldable Header) */}
       <div className="px-3 pt-2.5 pb-2.5 bg-[#222222] border-b border-[#2e2e2e] flex flex-col gap-2 w-full min-w-0">
         {/* Row 1: Menu, Title & Action Buttons */}
-        <div className="flex items-center justify-between gap-2 w-full">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center justify-between gap-1.5 w-full">
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
               onClick={onOpenMainMenu || onOpenSettings}
               className="p-1.5 -ml-1 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0 flex items-center justify-center"
@@ -295,8 +310,40 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             </h2>
           </div>
 
-          {/* Action icons: Calls, Settings, Plus, Tech Specs */}
+          {/* Action icons: Foldable Duo Switcher, Calls, Settings, Plus, Tech Specs */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* iPhone Duo / Foldable Book Mode Switcher */}
+            {onCycleDeviceMode && (
+              <button
+                onClick={onCycleDeviceMode}
+                className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 border ${
+                  deviceViewMode === 'duo'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : deviceViewMode === 'folded'
+                    ? 'bg-[#0077FF]/20 text-[#71aaeb] border-[#0077FF]/40'
+                    : 'bg-[#2c2d2e] text-[#939393] hover:text-white border-transparent'
+                }`}
+                title="Переключить режим экрана: Авто / Раскладушка (Книжка iPhone Duo) / Сложенный телефон"
+              >
+                {deviceViewMode === 'duo' ? (
+                  <>
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Книжка Duo</span>
+                  </>
+                ) : deviceViewMode === 'folded' ? (
+                  <>
+                    <Smartphone className="w-3.5 h-3.5 text-[#71aaeb]" />
+                    <span>1 экран</span>
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-3.5 h-3.5 text-[#71aaeb]" />
+                    <span className="hidden xs:inline">Duo</span>
+                  </>
+                )}
+              </button>
+            )}
+
             {/* Phone Call History Button */}
             {onOpenCallsModal && (
               <button
@@ -338,7 +385,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             {/* Tech Specs Modal Button */}
             <button
               onClick={onOpenTechSpecs}
-              className={`${isPhoneMode ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
+              className={`${isPhoneMode || deviceViewMode !== 'auto' ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
               title="Архитектура, SQL DDL и Бэкенд код"
             >
               <FileText className="w-4 h-4" />
@@ -352,7 +399,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#828282]" />
             <input
               type="text"
-              placeholder={isPhoneMode ? "Поиск чатов и людей..." : "Поиск людей, сообществ, сообщений..."}
+              placeholder={isPhoneMode || deviceViewMode !== 'auto' ? "Поиск людей, чатов или PIN..." : "Поиск людей, сообществ, сообщений или PIN..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#2c2d2e] text-white text-xs rounded-lg pl-8 pr-7 py-1.5 outline-none placeholder-[#828282] border border-transparent focus:border-[#0077FF] focus:bg-[#19191a] transition"

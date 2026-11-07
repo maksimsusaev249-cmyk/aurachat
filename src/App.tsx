@@ -706,6 +706,39 @@ export default function App() {
     );
   };
 
+  // Delete individual message (synchronized across peers)
+  const handleDeleteMessage = (chatId: string, messageId: string, forBoth: boolean = true) => {
+    playReactionSound();
+    setMessagesMap((prev) => {
+      const currentList = prev[chatId] || [];
+      const updatedList = currentList.filter((m) => m.id !== messageId);
+      const lastMsg = updatedList[updatedList.length - 1];
+      setChats((cList) =>
+        cList.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                lastMessage: lastMsg ? lastMsg.content || 'Медиасообщение' : 'Нет сообщений',
+                lastMessageTime: lastMsg ? 'Только что' : ''
+              }
+            : c
+        )
+      );
+      return {
+        ...prev,
+        [chatId]: updatedList
+      };
+    });
+
+    if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        channel.postMessage({ type: 'DELETE_MESSAGE_FOR_BOTH', chatId, messageId });
+        channel.close();
+      } catch {}
+    }
+  };
+
   // Delete chat for self or for both users
   const handleDeleteChat = (chatId: string, forBoth: boolean = false) => {
     playReactionSound();
@@ -747,6 +780,149 @@ export default function App() {
       return remaining.length > 0 ? remaining : [fallback];
     });
     setIsMobileChatOpen(false);
+  };
+
+  // Create a new hidden Secret Chat with a person or unlock existing one
+  const handleStartOrOpenSecretChat = (baseOrSecretChatId: string, pin: string) => {
+    playSentSound();
+    const normalChatId = baseOrSecretChatId.replace(/^chat_secret_/, '');
+    const secretChatId = `chat_secret_${normalChatId}`;
+
+    const existingSecret = chats.find((c) => c.id === secretChatId);
+    const normalChat = chats.find((c) => c.id === normalChatId) || selectedChat;
+
+    if (existingSecret) {
+      const updatedSecret: Chat = {
+        ...existingSecret,
+        isSecretChat: true,
+        secretPin: pin || existingSecret.secretPin || '000000',
+        parentChatId: normalChatId,
+        unreadCount: 0
+      };
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.id === secretChatId) return updatedSecret;
+          if (c.id === normalChatId) {
+            return { ...c, linkedSecretChatId: secretChatId, linkedSecretPin: updatedSecret.secretPin };
+          }
+          return c;
+        })
+      );
+      setSelectedChat(updatedSecret);
+      setIsMobileChatOpen(true);
+      triggerToast(`🔓 Открыт скрытый секретный чат с ${normalChat.title.replace(/^🔒\s*/, '')}`);
+      return;
+    }
+
+    const cleanName = normalChat.title.replace(/^🔒\s*/, '');
+    const newSecretChat: Chat = {
+      ...normalChat,
+      id: secretChatId,
+      type: 'direct',
+      title: `🔒 ${cleanName}`,
+      description: `Скрытый секретный чат с ${cleanName}. Защищён 6-значным PIN-кодом и сквозным шифрованием E2E.`,
+      isPrivate: true,
+      isSecretChat: true,
+      secretPin: pin,
+      parentChatId: normalChatId,
+      lastMessage: '🔐 Секретный чат создан (E2E)',
+      lastMessageTime: 'Только что',
+      unreadCount: 0
+    };
+
+    const initialSecretMsg: Message = {
+      id: 'm_secret_init_' + Date.now(),
+      chatId: secretChatId,
+      senderId: currentUser.id,
+      senderName: currentUser.displayName,
+      senderAvatar: currentUser.avatarUrl,
+      type: 'text',
+      content: `🔐 Скрытый секретный чат с «${cleanName}» создан (PIN: ${pin}). Этот диалог скрыт из общего списка чатов. Чтобы найти его снова — нажмите на значок 🔒 в обычном чате с этим человеком или введите PIN в поиске. Если завершить секретный чат — он полностью удалится и вернётся обычный диалог.`,
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'read'
+    };
+
+    setMessagesMap((prev) => ({
+      ...prev,
+      [secretChatId]: prev[secretChatId]?.length ? prev[secretChatId] : [initialSecretMsg]
+    }));
+
+    setChats((prev) => {
+      const updated = prev.map((c) =>
+        c.id === normalChatId
+          ? { ...c, linkedSecretChatId: secretChatId, linkedSecretPin: pin }
+          : c
+      );
+      return [newSecretChat, ...updated.filter((c) => c.id !== secretChatId)];
+    });
+
+    setSelectedChat(newSecretChat);
+    setIsMobileChatOpen(true);
+    triggerToast(`🔒 Создан скрытый секретный чат с ${cleanName}`);
+
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        channel.postMessage({
+          type: 'CREATE_SECRET_CHAT',
+          normalChatId,
+          secretChat: newSecretChat,
+          initialMessage: initialSecretMsg
+        });
+        channel.close();
+      } catch {}
+    }
+  };
+
+  // Temporarily hide the secret chat and return to the normal chat with this person
+  const handleHideSecretChatToNormal = (chatId: string) => {
+    playReactionSound();
+    const normalChatId = chatId.replace(/^chat_secret_/, '');
+    const normalChat = chats.find((c) => c.id === normalChatId);
+    if (normalChat) {
+      setSelectedChat(normalChat);
+      triggerToast('👁‍🗨 Секретный чат скрыт. Нажмите 🔒 в шапке чата, чтобы войти снова.');
+    }
+  };
+
+  // End and permanently delete the secret chat, returning to the original normal chat with this person
+  const handleEndSecretChat = (chatId: string) => {
+    playReactionSound();
+    const normalChatId = chatId.replace(/^chat_secret_/, '');
+    const secretChatId = `chat_secret_${normalChatId}`;
+
+    setMessagesMap((prev) => {
+      const copy = { ...prev };
+      delete copy[secretChatId];
+      return copy;
+    });
+
+    setChats((prev) => {
+      const withoutSecret = prev
+        .filter((c) => c.id !== secretChatId)
+        .map((c) =>
+          c.id === normalChatId
+            ? { ...c, linkedSecretChatId: undefined, linkedSecretPin: undefined, isSecretChat: false, secretPin: undefined }
+            : c
+        );
+      const originalNormalChat = withoutSecret.find((c) => c.id === normalChatId) || withoutSecret[0] || createSavedMessagesChat(currentUser);
+      setSelectedChat(originalNormalChat);
+      return withoutSecret;
+    });
+
+    triggerToast('🔓 Секретный чат завершён и удалён. Возврат в исходный диалог.');
+
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        channel.postMessage({
+          type: 'END_SECRET_CHAT',
+          normalChatId,
+          secretChatId
+        });
+        channel.close();
+      } catch {}
+    }
   };
 
 
@@ -886,6 +1062,37 @@ export default function App() {
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isQuotaExceededState, setIsQuotaExceededState] = useState(isFirestoreQuotaExceeded());
   const [isQuotaBannerDismissed, setIsQuotaBannerDismissed] = useState(false);
+  const [systemToast, setSystemToast] = useState<string | null>(null);
+  const triggerToast = (msg: string) => {
+    setSystemToast(msg);
+    setTimeout(() => {
+      setSystemToast((prev) => (prev === msg ? null : prev));
+    }, 3500);
+  };
+  const [deviceViewMode, setDeviceViewMode] = useState<'auto' | 'duo' | 'folded'>(() => {
+    try {
+      const saved = localStorage.getItem('aurachat_deviceViewMode');
+      if (saved === 'duo' || saved === 'folded' || saved === 'auto') return saved;
+    } catch {}
+    return 'auto';
+  });
+  const handleCycleDeviceMode = () => {
+    playReactionSound();
+    setDeviceViewMode((prev) => {
+      const next = prev === 'auto' ? 'duo' : prev === 'duo' ? 'folded' : 'auto';
+      try {
+        localStorage.setItem('aurachat_deviceViewMode', next);
+      } catch {}
+      triggerToast(
+        next === 'duo'
+          ? '📖 Режим «iPhone Duo — Раскладушка (Книжка 2 экрана)» включён'
+          : next === 'folded'
+          ? '📱 Режим «Сложенный телефон (1 экран iPhone)» включён'
+          : '✨ Автоматический адаптивный режим экрана'
+      );
+      return next;
+    });
+  };
   const isIncomingCloudUpdateRef = useRef(false);
   const [isCameraStudioOpen, setIsCameraStudioOpen] = useState(false);
   const [cameraStudioMode, setCameraStudioMode] = useState<CaptureMode>('post');
@@ -1227,6 +1434,8 @@ export default function App() {
       if (!data) return;
 
       if (data.type === 'DELETE_CHAT_FOR_BOTH' && data.chatId) {
+        playReactionSound();
+        triggerToast('🗑 Собеседник удалил историю чата у обоих');
         setMessagesMap((prev) => {
           const copy = { ...prev };
           delete copy[data.chatId];
@@ -1241,10 +1450,75 @@ export default function App() {
       }
 
       if (data.type === 'CLEAR_CHAT_HISTORY' && data.chatId) {
+        playReactionSound();
+        triggerToast('🧹 Собеседник очистил переписку у обоих');
         setMessagesMap((prev) => ({
           ...prev,
           [data.chatId]: []
         }));
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === data.chatId ? { ...c, lastMessage: 'Переписка очищена', lastMessageTime: 'Только что', unreadCount: 0 } : c
+          )
+        );
+        return;
+      }
+
+      if (data.type === 'DELETE_MESSAGE_FOR_BOTH' && data.chatId && data.messageId) {
+        setMessagesMap((prev) => {
+          const currentList = prev[data.chatId] || [];
+          return {
+            ...prev,
+            [data.chatId]: currentList.filter((m) => m.id !== data.messageId)
+          };
+        });
+        return;
+      }
+
+      if (data.type === 'CREATE_SECRET_CHAT' && data.secretChat && data.normalChatId) {
+        playReactionSound();
+        triggerToast('🔒 Собеседник создал скрытый секретный чат (доступ по PIN)');
+        if (data.initialMessage) {
+          setMessagesMap((prev) => ({
+            ...prev,
+            [data.secretChat.id]: prev[data.secretChat.id]?.length ? prev[data.secretChat.id] : [data.initialMessage]
+          }));
+        }
+        setChats((prev) => {
+          const updated = prev.map((c) =>
+            c.id === data.normalChatId
+              ? { ...c, linkedSecretChatId: data.secretChat.id, linkedSecretPin: data.secretChat.secretPin }
+              : c
+          );
+          if (updated.some((c) => c.id === data.secretChat.id)) return updated;
+          return [data.secretChat, ...updated];
+        });
+        return;
+      }
+
+      if (data.type === 'END_SECRET_CHAT' && data.secretChatId && data.normalChatId) {
+        playReactionSound();
+        triggerToast('🔓 Собеседник завершил и удалил секретный чат');
+        setMessagesMap((prev) => {
+          const copy = { ...prev };
+          delete copy[data.secretChatId];
+          return copy;
+        });
+        setChats((prev) => {
+          const withoutSecret = prev
+            .filter((c) => c.id !== data.secretChatId)
+            .map((c) =>
+              c.id === data.normalChatId
+                ? { ...c, linkedSecretChatId: undefined, linkedSecretPin: undefined, isSecretChat: false, secretPin: undefined }
+                : c
+            );
+          setSelectedChat((curr) =>
+            curr.id === data.secretChatId
+              ? withoutSecret.find((c) => c.id === data.normalChatId) || withoutSecret[0] || initialChats[0]
+              : curr
+          );
+          return withoutSecret;
+        });
         return;
       }
 
@@ -2451,7 +2725,29 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] w-full max-w-[100vw] bg-[#141414] text-[#e1e3e6] flex flex-col overflow-hidden font-sans select-none pt-[env(safe-area-inset-top,0px)]">
+    <div
+      className={`h-[100dvh] w-full max-w-[100vw] bg-[#0c0c0e] text-[#e1e3e6] flex flex-col overflow-hidden font-sans select-none pt-[env(safe-area-inset-top,0px)] ${
+        deviceViewMode === 'folded'
+          ? 'items-center justify-center sm:py-2'
+          : ''
+      }`}
+    >
+      <div
+        className={`h-full w-full bg-[#141414] flex flex-col overflow-hidden relative ${
+          deviceViewMode === 'folded'
+            ? 'max-w-[420px] sm:rounded-[32px] sm:border-[3px] sm:border-[#2e2e32] shadow-[0_0_50px_rgba(0,0,0,0.85)]'
+            : deviceViewMode === 'duo'
+            ? 'max-w-[1180px] mx-auto sm:rounded-[26px] sm:border-[3px] sm:border-[#32343a] shadow-[0_0_60px_rgba(0,119,255,0.15)]'
+            : ''
+        }`}
+      >
+      {/* Real-time System Toast Alert */}
+      {systemToast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 bg-[#1e2a38] text-white border border-[#0077FF]/60 px-4 py-2 rounded-2xl shadow-2xl text-xs sm:text-sm font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-3 backdrop-blur-md">
+          <span>{systemToast}</span>
+        </div>
+      )}
+
       {/* Offline / Quota Notice Banner — Compact & Safe on Mobile */}
       {isQuotaExceededState && !isQuotaBannerDismissed && (
         <div className="bg-[#1f1a0e] border-b border-amber-600/40 text-amber-200 px-3 py-1.5 text-xs flex items-center justify-between gap-2 z-40 shrink-0">
@@ -2481,8 +2777,12 @@ export default function App() {
 
       {/* Main AuraChat Body */}
       <div className="flex-1 min-h-0 min-w-0 w-full flex overflow-hidden">
-        {/* Left Sidebar Menu */}
-        <div className="hidden sm:flex flex-col justify-between py-3 px-2 bg-[#141414] border-r border-[#2e2e2e] w-16 lg:w-52 shrink-0 z-20">
+        {/* Left Sidebar Menu (Desktop only when deviceViewMode === 'auto') */}
+        <div
+          className={`${
+            deviceViewMode === 'auto' ? 'hidden lg:flex' : 'hidden'
+          } flex-col justify-between py-3 px-2 bg-[#141414] border-r border-[#2e2e2e] w-16 lg:w-52 shrink-0 z-20`}
+        >
           <div className="space-y-1 flex flex-col">
             {/* Brand Header: AuraChat */}
             <div
@@ -2647,13 +2947,15 @@ export default function App() {
 
         {/* --- SCREEN 1: CHATS VIEW (DEFAULT REAL MESSENGER) --- */}
         {activeScreen === 'chats' && (
-          <div className="flex-1 min-w-0 min-h-0 w-full flex overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 w-full flex overflow-hidden relative">
             <TelegramSidebar
               chats={chats}
               selectedChatId={selectedChat.id}
               messagesMap={messagesMap}
               onlinePeerMap={onlinePeerMap}
               isMobileChatOpen={isMobileChatOpen}
+              deviceViewMode={deviceViewMode}
+              onCycleDeviceMode={handleCycleDeviceMode}
               onSelectChat={(c) => {
                 const cleanChat = { ...c, unreadCount: 0 };
                 setSelectedChat(cleanChat);
@@ -2692,6 +2994,7 @@ export default function App() {
                 const existing = chats.find(
                   (c) =>
                     c.type === 'direct' &&
+                    !c.isSecretChat &&
                     (c.title.toLowerCase() === target.displayName.toLowerCase() ||
                       c.members.some(
                         (m) =>
@@ -2761,7 +3064,50 @@ export default function App() {
               }}
             />
 
-            <div className={`flex-1 min-w-0 min-h-0 h-full w-full overflow-hidden flex flex-col ${!isMobileChatOpen ? 'hidden md:flex' : 'flex'}`}>
+            {/* Central Book Hinge (Шарнир раскладушки-книжки iPhone Duo) */}
+            <div
+              className={`${
+                deviceViewMode === 'duo'
+                  ? 'flex'
+                  : deviceViewMode === 'folded'
+                  ? 'hidden'
+                  : 'hidden min-[620px]:max-lg:flex'
+              } w-3 sm:w-3.5 bg-gradient-to-r from-[#09090b] via-[#27272a] to-[#09090b] border-x border-[#3f3f46]/60 flex-col items-center justify-between py-6 shrink-0 z-30 select-none shadow-[0_0_20px_rgba(0,0,0,0.9)] relative`}
+              title="Шарнир раскладушки iPhone Duo (Книжка 2 экрана)"
+            >
+              {/* Upper Hinge Cap */}
+              <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
+
+              {/* Center Interactive Fold/Unfold Button */}
+              <button
+                onClick={handleCycleDeviceMode}
+                className="w-5 h-16 -mx-1 rounded-full bg-[#18181b] hover:bg-[#0077FF] text-[#a1a1aa] hover:text-white border border-[#3f3f46] hover:border-[#71aaeb] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer shadow-lg group"
+                title="Переключить режим раскладушки: Книжка Duo (2 экрана) / Сложенный 1 экран / Авто"
+              >
+                <span className="w-1 h-1 rounded-full bg-current opacity-70" />
+                <span className="text-[8px] font-black tracking-tighter [writing-mode:vertical-rl] rotate-180 uppercase">
+                  DUO
+                </span>
+                <span className="w-1 h-1 rounded-full bg-current opacity-70" />
+              </button>
+
+              {/* Lower Hinge Cap */}
+              <div className="w-1.5 h-8 rounded-full bg-gradient-to-t from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
+            </div>
+
+            <div
+              className={`flex-1 min-w-0 min-h-0 h-full w-full overflow-hidden flex flex-col ${
+                deviceViewMode === 'duo'
+                  ? 'flex'
+                  : deviceViewMode === 'folded'
+                  ? !isMobileChatOpen
+                    ? 'hidden'
+                    : 'flex'
+                  : !isMobileChatOpen
+                  ? 'hidden min-[620px]:flex'
+                  : 'flex'
+              }`}
+            >
               <ChatArea
                 chat={selectedChat}
                 messages={messagesMap[selectedChat.id] || []}
@@ -2838,7 +3184,12 @@ export default function App() {
                 }}
                 onDeleteChatHistory={handleClearChatHistory}
                 onDeleteChat={handleDeleteChat}
+                onDeleteMessage={handleDeleteMessage}
                 onLeaveChat={handleLeaveChat}
+                onStartOrOpenSecretChat={handleStartOrOpenSecretChat}
+                onHideSecretChatToNormal={handleHideSecretChatToNormal}
+                onEndSecretChat={handleEndSecretChat}
+                deviceViewMode={deviceViewMode}
               />
             </div>
           </div>
@@ -2969,8 +3320,12 @@ export default function App() {
         )}
       </div>
 
-      {/* Mobile Bottom Navigation Bar — Exactly 5 Buttons: Новости, Клипы, Чаты, Ещё (внутри Группы и сервисы), Профиль */}
-      <div className="sm:hidden px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))] bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0">
+      {/* Mobile & Foldable Book Bottom Navigation Bar — Exactly 5 Buttons: Новости, Клипы, Чаты, Ещё, Профиль */}
+      <div
+        className={`${
+          deviceViewMode === 'auto' ? 'lg:hidden' : 'grid'
+        } px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))] bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0`}
+      >
         {/* 1. Новости */}
         <button
           onClick={() => handleOpenPostsFeed('all')}
@@ -3552,7 +3907,9 @@ export default function App() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }
+
 

@@ -142,6 +142,11 @@ export interface Chat {
   unreadCount?: number;
   requiresApproval?: boolean;
   joinRequests?: JoinRequest[];
+  isSecretChat?: boolean;
+  secretPin?: string;
+  parentChatId?: string;
+  linkedSecretChatId?: string;
+  linkedSecretPin?: string;
 }
 
 export type MessageType = 'text' | 'image' | 'voice' | 'video_note' | 'file' | 'audio';

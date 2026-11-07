@@ -44,7 +44,8 @@ import {
   Share2,
   Pin,
   PinOff,
-  Search
+  Search,
+  Copy
 } from 'lucide-react';
 import { CreateTopicModal } from './CreateTopicModal';
 import { InviteAndQRModal } from './InviteAndQRModal';
@@ -83,8 +84,13 @@ interface ChatAreaProps {
   onOpenCommunityFeed?: (chat: Chat) => void;
   onDeleteChatHistory?: (chatId: string, forBoth: boolean) => void;
   onDeleteChat?: (chatId: string, forBoth: boolean) => void;
+  onDeleteMessage?: (chatId: string, messageId: string, forBoth?: boolean) => void;
   onLeaveChat?: (chatId: string) => void;
+  onStartOrOpenSecretChat?: (chatId: string, pin: string) => void;
+  onHideSecretChatToNormal?: (chatId: string) => void;
+  onEndSecretChat?: (chatId: string) => void;
   isPhoneMode?: boolean;
+  deviceViewMode?: 'auto' | 'duo' | 'folded';
   savedAccounts?: User[];
   onlinePeerMap?: Record<string, number>;
 }
@@ -110,8 +116,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onOpenCommunityFeed,
   onDeleteChatHistory,
   onDeleteChat,
+  onDeleteMessage,
   onLeaveChat,
+  onStartOrOpenSecretChat,
+  onHideSecretChatToNormal,
+  onEndSecretChat,
   isPhoneMode = false,
+  deviceViewMode = 'auto',
   savedAccounts = [],
   onlinePeerMap = {}
 }) => {
@@ -146,8 +157,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [isSecretChat, setIsSecretChat] = useState(false);
-  const [secretPin, setSecretPin] = useState('');
+  const isSecretChat = Boolean(chat.isSecretChat);
+  const hasLinkedSecretChat = Boolean(chat.linkedSecretChatId);
+  const [pinModalMode, setPinModalMode] = useState<'create' | 'unlock'>('create');
   const [showSecretPinModal, setShowSecretPinModal] = useState(false);
   const [pinKeypadInput, setPinKeypadInput] = useState('');
   const [pinKeypadError, setPinKeypadError] = useState('');
@@ -274,8 +286,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     });
   };
 
-  const handleOpenSecretPinModal = () => {
+  const handleOpenSecretPinModal = (modeOverride?: 'create' | 'unlock') => {
     setShowMoreMenu(false);
+    setPinModalMode(modeOverride || (hasLinkedSecretChat ? 'unlock' : 'create'));
     setPinKeypadInput('');
     setPinKeypadError('');
     setShowSecretPinModal(true);
@@ -286,21 +299,29 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       setPinKeypadError('Код должен состоять ровно из 6 цифр');
       return;
     }
-    setSecretPin(pin);
-    setIsSecretChat(true);
+    if (pinModalMode === 'unlock' && chat.linkedSecretPin && pin !== chat.linkedSecretPin) {
+      setPinKeypadError('Неверный 6-значный PIN-код от скрытого секретного чата');
+      return;
+    }
     setShowSecretPinModal(false);
-    playSentSound();
-    triggerToast('🔒 Секретный чат с 6-значным паролем активирован');
-    onSendMessage('text', '🔐 Секретный чат активирован: включено сквозное E2E шифрование. Чат защищён 6-значным паролем.');
+    setPinKeypadInput('');
+    setPinKeypadError('');
+    if (onStartOrOpenSecretChat) {
+      onStartOrOpenSecretChat(chat.id, pin);
+    } else {
+      playSentSound();
+      triggerToast('🔒 Секретный чат с 6-значным паролем активирован');
+    }
   };
 
   const handleEndSecretChat = () => {
     setShowMoreMenu(false);
-    setIsSecretChat(false);
-    setSecretPin('');
-    playReactionSound();
-    triggerToast('Секретный чат завершён. Обычный режим восстановлен.');
-    onSendMessage('text', '🔓 Секретный чат завершён. Диалог переведён в обычный режим.');
+    if (onEndSecretChat) {
+      onEndSecretChat(chat.id);
+    } else {
+      playReactionSound();
+      triggerToast('Секретный чат завершён и удалён. Возврат в исходный диалог.');
+    }
   };
 
   const handleConfirmDeleteChat = (forBoth: boolean) => {
@@ -323,7 +344,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     triggerToast(chat.type === 'channel' ? 'Вы покинули канал' : 'Вы покинули группу');
   };
 
-  // Handle Send: реальная отправка сообщения в AuraChat
+  // Handle Send: реальная отправка сообщения в AuraChat (или мгновенный вход в скрытый секретный чат при вводе PIN)
   const handleSend = () => {
     if (isBlocked) {
       triggerToast('Собеседник заблокирован. Разблокируйте, чтобы отправлять сообщения.');
@@ -331,6 +352,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     }
     if (!inputText.trim()) return;
     const textToSend = inputText.trim();
+
+    // Если с этим человеком есть скрытый секретный чат и пользователь ввёл свой 6-значный PIN — мгновенно входим в скрытый чат!
+    if (!isSecretChat && hasLinkedSecretChat && chat.linkedSecretPin && textToSend === chat.linkedSecretPin && onStartOrOpenSecretChat) {
+      setInputText('');
+      onStartOrOpenSecretChat(chat.id, textToSend);
+      return;
+    }
+
     setInputText('');
     setShowEmojiPicker(false);
     setShowManagerTemplates(false);
@@ -563,10 +592,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* 1. TOP HEADER (VKontakte Messenger Header) */}
       <div className="w-full min-w-0 max-w-full px-3 sm:px-4 py-2.5 bg-[#222222] border-b border-[#2e2e2e] flex items-center justify-between gap-1 sm:gap-2 shrink-0 z-20">
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1 overflow-hidden">
-          {onBackMobile && (
+          {onBackMobile && deviceViewMode !== 'duo' && (
             <button
               onClick={onBackMobile}
-              className={`${isPhoneMode ? 'flex' : 'md:hidden flex'} items-center justify-center p-1 -ml-0.5 text-[#71aaeb] hover:text-white rounded-lg shrink-0 cursor-pointer`}
+              className={`${isPhoneMode || deviceViewMode === 'folded' ? 'flex' : 'min-[620px]:hidden flex'} items-center justify-center p-1 -ml-0.5 text-[#71aaeb] hover:text-white rounded-lg shrink-0 cursor-pointer`}
               title="Назад к списку чатов"
             >
               <ChevronLeft className="w-5 h-5" />
@@ -581,7 +610,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <img
                 src={chat.avatarUrl}
                 alt={chat.title}
-                className="w-9 h-9 rounded-full object-cover group-hover:opacity-90 transition"
+                className={`w-9 h-9 rounded-full object-cover group-hover:opacity-90 transition ${isSecretChat ? 'ring-2 ring-emerald-400' : ''}`}
               />
               {chat.type === 'direct' && peerPresence.isOnline && (
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#222222] bg-emerald-500" />
@@ -600,7 +629,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   {isSecretChat && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40 shrink-0">
                       <Lock className="w-3 h-3 text-emerald-400" />
-                      <span>E2E (PIN)</span>
+                      <span>Скрытый E2E</span>
                     </span>
                   )}
                   {isBlocked && (
@@ -618,6 +647,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   <span className="text-[#71aaeb] font-medium flex items-center gap-1 truncate">
                     <span className="truncate">{typingUser}</span>
                   </span>
+                ) : isSecretChat ? (
+                  <span className="text-emerald-400 font-medium truncate">Скрытый секретный чат • Защищён PIN</span>
                 ) : chat.type === 'saved' ? (
                   <span className="text-[#71aaeb] font-medium">Личное хранилище • 1 человек (только вы)</span>
                 ) : chat.type === 'direct' ? (
@@ -642,6 +673,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
         {/* Action icons */}
         <div className="flex items-center gap-0.5 sm:gap-1 text-[#939393] shrink-0 ml-1">
+          {/* Кнопка быстрого входа в скрытый секретный чат с этим человеком */}
+          {!isSecretChat && chat.type === 'direct' && hasLinkedSecretChat && (
+            <button
+              onClick={() => handleOpenSecretPinModal('unlock')}
+              className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 shadow-xs"
+              title="Открыть скрытый секретный чат с этим человеком (по 6-значному PIN-коду)"
+            >
+              <Lock className="w-3 h-3 text-emerald-400" />
+              <span className="hidden xs:inline">Секретный</span>
+            </button>
+          )}
+
           {chat.requiresApproval && chat.joinRequests && chat.joinRequests.length > 0 && isOwnerOrAdmin && (
             <button
               onClick={() => setIsJoinRequestsOpen(true)}
@@ -809,36 +852,59 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       </div>
                     </button>
 
-                    {/* 2. Начать секретный чат (6-код) */}
-                    <button
-                      onClick={isSecretChat ? handleEndSecretChat : handleOpenSecretPinModal}
-                      className={`w-full px-3 py-2 rounded-xl flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        isSecretChat
-                          ? 'hover:bg-rose-500/15 text-rose-300'
-                          : 'hover:bg-emerald-500/15 text-emerald-300'
-                      }`}
-                    >
-                      {isSecretChat ? (
-                        <Lock className="w-4 h-4 text-rose-400 shrink-0" />
-                      ) : (
+                    {/* 2. Секретный чат (Создать / Войти в скрытый / Скрыть / Завершить и удалить) */}
+                    {isSecretChat ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setShowMoreMenu(false);
+                            if (onHideSecretChatToNormal) onHideSecretChatToNormal(chat.id);
+                          }}
+                          className="w-full px-3 py-2 rounded-xl hover:bg-emerald-500/15 text-emerald-300 flex items-center gap-2.5 transition text-left cursor-pointer"
+                        >
+                          <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold">Скрыть секретный чат</div>
+                            <div className="text-[10px] opacity-70">
+                              Вернуться в обычный диалог (чат останется скрытым)
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={handleEndSecretChat}
+                          className="w-full px-3 py-2 rounded-xl hover:bg-rose-500/15 text-rose-300 flex items-center gap-2.5 transition text-left cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold">Завершить секретный чат</div>
+                            <div className="text-[10px] opacity-70">
+                              Удалить секретный чат и вернуться в исходное положение
+                            </div>
+                          </div>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenSecretPinModal(hasLinkedSecretChat ? 'unlock' : 'create')}
+                        className="w-full px-3 py-2 rounded-xl hover:bg-emerald-500/15 text-emerald-300 flex items-center gap-2.5 transition text-left cursor-pointer"
+                      >
                         <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold flex items-center gap-1.5">
-                          <span>{isSecretChat ? 'Завершить секретный чат' : 'Начать секретный чат'}</span>
-                          {!isSecretChat && (
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold flex items-center gap-1.5">
+                            <span>{hasLinkedSecretChat ? 'Войти в скрытый секретный чат' : 'Начать секретный чат'}</span>
                             <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
                               6-код
                             </span>
-                          )}
+                          </div>
+                          <div className="text-[10px] opacity-70">
+                            {hasLinkedSecretChat
+                              ? 'Ввести PIN и открыть скрытый чат с этим человеком'
+                              : 'Создать новый скрытый чат с паролем 6-код'}
+                          </div>
                         </div>
-                        <div className="text-[10px] opacity-70">
-                          {isSecretChat
-                            ? 'Отключить сквозное шифрование'
-                            : 'Придумать пароль 6-код и включить E2E'}
-                        </div>
-                      </div>
-                    </button>
+                      </button>
+                    )}
 
                     {/* 3. Выключить звук */}
                     <button
@@ -1011,32 +1077,52 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* SECRET CHAT ENCRYPTION BANNER */}
       {isSecretChat && (
-        <div className="w-full bg-gradient-to-r from-emerald-950/90 via-[#162725] to-emerald-950/90 border-b border-emerald-500/40 px-4 py-2 flex items-center justify-between text-xs text-emerald-200 shrink-0 z-10 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
-            <span className="text-[11px]">
-              🔒 <b>Секретный чат активен:</b> Сквозное E2E шифрование, диалог защищен 6-значным паролем.
+        <div className="w-full bg-gradient-to-r from-emerald-950/90 via-[#162725] to-emerald-950/90 border-b border-emerald-500/40 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 text-xs text-emerald-200 shrink-0 z-10 animate-in fade-in">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0 animate-pulse" />
+            <span className="text-[10px] sm:text-[11px] truncate">
+              🔒 <b>Скрытый секретный чат:</b> сквозное шифрование (не виден в общем списке).
             </span>
           </div>
-          <button
-            onClick={handleEndSecretChat}
-            className="text-[10px] text-emerald-300 hover:text-white underline cursor-pointer"
-          >
-            Завершить
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onHideSecretChatToNormal && (
+              <button
+                onClick={() => onHideSecretChatToNormal(chat.id)}
+                className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-[10px] text-emerald-200 font-semibold cursor-pointer transition"
+                title="Скрыть секретный чат и вернуться к обычному диалогу"
+              >
+                Скрыть
+              </button>
+            )}
+            <button
+              onClick={handleEndSecretChat}
+              className="px-2 py-0.5 rounded-lg bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/40 text-[10px] text-rose-200 font-bold cursor-pointer transition"
+              title="Завершить и удалить секретный чат (возврат в исходное положение)"
+            >
+              Завершить
+            </button>
+          </div>
         </div>
       )}
 
-      {/* IN-CHAT MESSAGE SEARCH OVERLAY (ПОИСК В ПЕРЕПИСКЕ) */}
+      {/* IN-CHAT MESSAGE SEARCH OVERLAY (ПОИСК В ПЕРЕПИСКЕ ИЛИ ВХОД В СКРЫТЫЙ ЧАТ ПО PIN) */}
       {isChatSearchOpen && (
         <div className="w-full bg-[#1c1c20] border-b border-[#2e2e2e] px-4 py-2 flex items-center gap-2 text-xs text-white shrink-0 animate-in fade-in slide-in-from-top-1 z-10">
           <Search className="w-4 h-4 text-[#71aaeb] shrink-0" />
           <input
             type="text"
             autoFocus
-            placeholder="Поиск по истории сообщений в этом чате..."
+            placeholder={hasLinkedSecretChat && !isSecretChat ? "Поиск сообщений или введите 6-значный PIN секретного чата..." : "Поиск по истории сообщений в этом чате..."}
             value={chatSearchQuery}
-            onChange={(e) => setChatSearchQuery(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setChatSearchQuery(val);
+              if (!isSecretChat && hasLinkedSecretChat && chat.linkedSecretPin && val.trim() === chat.linkedSecretPin && onStartOrOpenSecretChat) {
+                setChatSearchQuery('');
+                setIsChatSearchOpen(false);
+                onStartOrOpenSecretChat(chat.id, val.trim());
+              }
+            }}
             className="flex-1 bg-[#141414] text-white text-xs px-3 py-1.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF] transition"
           />
           {chatSearchQuery && (
@@ -1208,6 +1294,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               key={msg.id}
               onMouseEnter={() => setHoveredMessageId(msg.id)}
               onMouseLeave={() => setHoveredMessageId(null)}
+              onClick={() => setHoveredMessageId((prev) => (prev === msg.id ? null : msg.id))}
               className={`flex items-end gap-2 max-w-[86%] sm:max-w-[70%] min-w-0 group relative ${
                 isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'
               }`}
@@ -1222,7 +1309,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
               {/* Message Bubble Container */}
               <div className="relative min-w-0 max-w-full">
-                {/* Floating Quick Action Bar (VK / Telegram style: Reactions, Reply, Pin, Forward) */}
+                {/* Floating Quick Action Bar (VK / Telegram / Klik-Klan style: Reactions, Reply, Pin, Forward, Copy, Delete) */}
                 {hoveredMessageId === msg.id && (
                   <div className={`absolute -top-8 z-20 flex items-center gap-1 bg-[#222222] border border-[#2e2e2e] rounded-full px-2 py-0.5 shadow-xl transition animate-in fade-in zoom-in-95 ${
                     isMe ? 'right-0' : 'left-0'
@@ -1230,7 +1317,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     {['❤️', '👍', '🔥', '😂', '🚀'].map((em) => (
                       <button
                         key={em}
-                        onClick={() => handleReactionClick(msg.id, em)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReactionClick(msg.id, em);
+                        }}
                         className="text-xs sm:text-sm hover:scale-125 transition p-0.5 cursor-pointer"
                         title={`Реакция ${em}`}
                       >
@@ -1239,14 +1329,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     ))}
                     <div className="w-px h-3 bg-[#3a3b3c] mx-0.5" />
                     <button
-                      onClick={() => setReplyingToMessage(msg)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setReplyingToMessage(msg);
+                      }}
                       className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
                       title="Ответить на сообщение"
                     >
                       <CornerUpLeft className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setPinnedMessage(msg);
                         triggerToast('📌 Сообщение закреплено вверху чата');
                       }}
@@ -1256,11 +1350,42 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       <Pin className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => setForwardingMessage(msg)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setForwardingMessage(msg);
+                      }}
                       className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
                       title="Переслать сообщение"
                     >
                       <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                    {msg.content && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (navigator.clipboard) {
+                            navigator.clipboard.writeText(msg.content);
+                            triggerToast('📋 Текст скопирован в буфер');
+                          }
+                        }}
+                        className="p-1 text-[#71aaeb] hover:text-white transition cursor-pointer"
+                        title="Скопировать текст сообщения"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onDeleteMessage) {
+                          onDeleteMessage(chat.id, msg.id, true);
+                          triggerToast('🗑 Сообщение удалено у всех');
+                        }
+                      }}
+                      className="p-1 text-[#e64646] hover:text-[#ff6b6b] transition cursor-pointer"
+                      title="Удалить сообщение у всех"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -1660,29 +1785,44 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
           {/* Mobile & Desktop adaptive Send / Voice / Video buttons */}
           {inputText.trim() ? (
-            <button
-              onClick={handleSend}
-              className="p-2 bg-[#0077FF] hover:bg-[#0066DD] text-white rounded-lg transition cursor-pointer shrink-0"
-              title="Отправить сообщение (Enter)"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+              {/* Video Note Button («Кружочек») */}
+              <button
+                type="button"
+                onClick={onOpenVideoNoteRecorder}
+                className="flex items-center justify-center p-1.5 text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
+                title="Записать видеокружок (круглое видеосообщение)"
+              >
+                <Disc className="w-4 h-4 text-[#71aaeb]" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSend}
+                className="p-2 bg-[#0077FF] hover:bg-[#0066DD] text-white rounded-lg transition cursor-pointer shrink-0 flex items-center justify-center"
+                title="Отправить сообщение (Enter)"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
           ) : (
             <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-              {/* Video Note Button */}
+              {/* Video Note Button («Кружочек» — доступен всегда на телефонах и компьютерах) */}
               <button
+                type="button"
                 onClick={onOpenVideoNoteRecorder}
-                className="hidden xs:flex p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
-                title="Видеосообщение"
+                className="flex items-center justify-center p-1.5 text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0 relative group"
+                title="Записать кружочек (видеосообщение)"
               >
-                <Disc className="w-4 h-4" />
+                <Disc className="w-4 h-4 text-[#71aaeb] group-hover:scale-110 transition-transform" />
               </button>
 
               {/* Voice Note Button */}
               <button
+                type="button"
                 onClick={() => setIsVoiceStudioOpen(true)}
                 onMouseDown={() => setIsVoiceStudioOpen(true)}
-                className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
+                className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0 flex items-center justify-center"
                 title="Голосовое сообщение"
               >
                 <Mic className="w-4 h-4" />
@@ -1762,6 +1902,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onOpenUserProfile={onOpenUserProfile}
         onOpenCommunityFeed={onOpenCommunityFeed}
         onDeleteChatHistory={onDeleteChatHistory}
+        onOpenSearch={() => setIsChatSearchOpen(true)}
+        onOpenSecretChat={() => handleOpenSecretPinModal(hasLinkedSecretChat ? 'unlock' : 'create')}
+        onEndSecretChat={handleEndSecretChat}
       />
 
       {/* 6. CHANNEL & GROUP MANAGEMENT MODAL */}
@@ -1831,10 +1974,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
             <div className="space-y-1">
               <h3 className="text-lg font-black text-white">
-                Пароль Секретного Чата
+                {pinModalMode === 'unlock'
+                  ? 'Вход в Скрытый Секретный Чат'
+                  : 'Создание Скрытого Секретного Чата'}
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Придумайте <b className="text-emerald-400">6-значный цифровой код</b> для защиты диалога с «{chat.title}». Включится сквозное E2E шифрование.
+                {pinModalMode === 'unlock' ? (
+                  <>
+                    Введите ваш <b className="text-emerald-400">6-значный PIN-код</b>, чтобы открыть скрытый секретный чат с «{chat.title}».
+                  </>
+                ) : (
+                  <>
+                    Придумайте <b className="text-emerald-400">6-значный цифровой код</b>. Появится новый скрытый чат с «{chat.title}» (не виден в общем списке, при завершении полностью удаляется).
+                  </>
+                )}
               </p>
             </div>
 
@@ -1915,7 +2068,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 onClick={() => handleConfirmSecretPin(pinKeypadInput)}
                 className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-extrabold text-xs rounded-2xl cursor-pointer transition shadow-lg"
               >
-                Активировать
+                {pinModalMode === 'unlock' ? 'Открыть чат' : 'Создать чат'}
               </button>
             </div>
           </div>

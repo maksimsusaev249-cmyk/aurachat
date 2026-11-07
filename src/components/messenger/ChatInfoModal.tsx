@@ -46,6 +46,8 @@ interface ChatInfoModalProps {
   onBlockUser?: (userId: string) => void;
   onAddUserToGroupOrChannel?: (targetChatId: string, targetType: 'group' | 'channel') => void;
   onOpenSearch?: () => void;
+  onOpenSecretChat?: () => void;
+  onEndSecretChat?: () => void;
 }
 
 type MediaSubTab = 'media' | 'starred' | 'files' | 'music' | 'voice_gif' | 'links';
@@ -62,7 +64,9 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
   onDeleteChatHistory,
   onBlockUser,
   onAddUserToGroupOrChannel,
-  onOpenSearch
+  onOpenSearch,
+  onOpenSecretChat,
+  onEndSecretChat
 }) => {
   // Navigation & Dropdown States
   const [activeMediaTab, setActiveMediaTab] = useState<MediaSubTab>('media');
@@ -117,6 +121,12 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
 
   const handleOpenProfileClick = () => {
     playReactionSound();
+    if (chat.type === 'saved' || chat.id.startsWith('chat_saved') || chat.id.includes('saved')) {
+      setActionNotice('📁 Это личное хранилище (Избранное) для заметок и файлов');
+      setTimeout(() => setActionNotice(null), 2500);
+      return;
+    }
+
     if (isCommunity && onOpenCommunityFeed) {
       onOpenCommunityFeed(chat);
       onClose();
@@ -132,16 +142,16 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
         avatar: other.avatarUrl
       });
       onClose();
-    } else if (onOpenUserProfile) {
+    } else if (chat.type === 'direct' && onOpenUserProfile) {
       onOpenUserProfile({
-        id: 'u_durov',
-        name: chat.title || 'Павел Дуров',
-        username: 'durov',
-        avatar: chat.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80'
+        id: chat.id,
+        name: chat.title,
+        username: chat.title.toLowerCase().replace(/[^a-z0-9_]/g, '') || 'user',
+        avatar: chat.avatarUrl
       });
       onClose();
     } else {
-      setActionNotice(isCommunity ? 'Сообщество открыто' : 'Профиль открыт');
+      setActionNotice(isCommunity ? 'Сообщество открыто' : 'Профиль недоступен');
       setTimeout(() => setActionNotice(null), 2000);
     }
     setIsMoreDropdownOpen(false);
@@ -236,28 +246,33 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
           
           {/* Big Avatar + Name + Subtitle Header (Clickable to open full profile) */}
           <div className="flex flex-col items-center text-center">
-            <button
-              onClick={handleOpenProfileClick}
-              className="relative mb-3 group cursor-pointer hover:scale-105 transition transform"
-              title="Нажмите, чтобы открыть профиль"
-            >
+            <div className="relative mb-3 flex items-center justify-center">
               <img
                 src={chat.avatarUrl}
                 alt={chat.title}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover ring-4 ring-[#5288c1]/40 shadow-xl group-hover:ring-cyan-400 transition"
+                className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover ring-4 ring-[#5288c1]/40 shadow-xl"
               />
               {chat.type === 'direct' && (
                 <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-[#17212b] bg-emerald-500" />
               )}
-              <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#5288c1] text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full shadow opacity-90 group-hover:opacity-100 transition whitespace-nowrap">
-                {isCommunity ? 'Зайти на сообщество' : 'Зайти на профиль'}
-              </span>
-            </button>
+              {chat.type === 'saved' ? (
+                <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#2563eb] text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full shadow opacity-95 whitespace-nowrap">
+                  Личное хранилище
+                </span>
+              ) : (
+                <button
+                  onClick={handleOpenProfileClick}
+                  className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#5288c1] text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full shadow opacity-90 hover:opacity-100 transition whitespace-nowrap cursor-pointer"
+                >
+                  {isCommunity ? 'Зайти на сообщество' : 'Зайти на профиль'}
+                </button>
+              )}
+            </div>
 
             <h2
-              onClick={handleOpenProfileClick}
-              className="font-extrabold text-lg sm:text-xl text-white flex items-center justify-center gap-1.5 cursor-pointer hover:text-cyan-300 transition"
-              title="Нажмите, чтобы открыть профиль"
+              onClick={chat.type !== 'saved' ? handleOpenProfileClick : undefined}
+              className={`font-extrabold text-lg sm:text-xl text-white flex items-center justify-center gap-1.5 transition ${chat.type !== 'saved' ? 'cursor-pointer hover:text-cyan-300' : ''}`}
+              title={chat.type === 'saved' ? 'Личное хранилище (Избранное)' : 'Нажмите, чтобы открыть профиль'}
             >
               <span>{chat.title}</span>
               {chat.type === 'channel' && <span className="text-cyan-400 text-sm">📢</span>}
@@ -265,7 +280,7 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
 
             <p className="text-xs text-slate-400 mt-0.5">
               {chat.type === 'saved' ? (
-                <span className="text-[#64b5f6] font-semibold">1 человек • личное хранилище</span>
+                <span className="text-[#64b5f6] font-semibold">Личное облако заметок и файлов • Только вы</span>
               ) : chat.type === 'direct' ? (
                 <span className="text-emerald-400 font-semibold">в сети</span>
               ) : (
@@ -278,10 +293,125 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
                 {chat.description}
               </p>
             )}
+
+            {/* СКРЫТЫЙ СЕКРЕТНЫЙ ЧАТ С ЭТИМ ЧЕЛОВЕКОМ (НАЙТИ / ВОЙТИ / ЗАВЕРШИТЬ) */}
+            {chat.type === 'direct' && (
+              <div className="mt-3 w-full max-w-xs">
+                {chat.isSecretChat ? (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (onEndSecretChat) onEndSecretChat();
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Завершить секретный чат (удалить и вернуться)</span>
+                  </button>
+                ) : chat.linkedSecretChatId ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        onClose();
+                        if (onOpenSecretChat) onOpenSecretChat();
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Войти в скрытый секретный чат</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        onClose();
+                        if (onEndSecretChat) onEndSecretChat();
+                      }}
+                      className="py-2 px-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center transition cursor-pointer"
+                      title="Завершить и удалить скрытый секретный чат"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (onOpenSecretChat) onOpenSecretChat();
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-[#1e2a38] hover:bg-[#283748] border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Создать скрытый секретный чат (6-код)</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Primary Action Buttons Row - EXACTLY 4 BUTTONS: Вызов, Включить звук, Поиск, Ещё */}
-          <div className="grid grid-cols-4 gap-2 py-2">
+          {/* Primary Action Buttons Row */}
+          {chat.type === 'saved' ? (
+            <div className="grid grid-cols-3 gap-2 py-2">
+              {/* BUTTON 1: ПОИСК ПО ХРАНИЛИЩУ */}
+              <button
+                onClick={() => {
+                  playReactionSound();
+                  if (onOpenSearch) onOpenSearch();
+                  onClose();
+                }}
+                className="w-full py-2.5 px-1 rounded-2xl bg-[#202b36] hover:bg-[#283748] border border-[#2b3c4f] flex flex-col items-center justify-center gap-1 text-[#64b5f6] hover:text-white transition cursor-pointer shadow-md"
+              >
+                <Search className="w-5 h-5" />
+                <span className="text-[11px] font-bold truncate">Поиск</span>
+              </button>
+
+              {/* BUTTON 2: ЗВУК */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setIsMuteDropdownOpen(!isMuteDropdownOpen);
+                    setIsMoreDropdownOpen(false);
+                  }}
+                  className={`w-full py-2.5 px-1 rounded-2xl border flex flex-col items-center justify-center gap-1 transition cursor-pointer shadow-md ${
+                    isMuted
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                      : 'bg-[#202b36] hover:bg-[#283748] border-[#2b3c4f] text-[#64b5f6] hover:text-white'
+                  }`}
+                >
+                  {isMuted ? <BellOff className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                  <span className="text-[11px] font-bold truncate">{isMuted ? 'Без звука' : 'Звук'}</span>
+                </button>
+
+                {isMuteDropdownOpen && (
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-52 bg-[#1e2a38] border border-[#2b3c4f] rounded-2xl shadow-2xl p-1.5 z-30 space-y-1 animate-in fade-in zoom-in-95">
+                    <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Настройка уведомлений
+                    </div>
+                    <button
+                      onClick={() => handleMuteSelect('Включены', false)}
+                      className="w-full p-2 rounded-xl hover:bg-[#283748] text-left text-xs font-semibold text-emerald-300 transition cursor-pointer"
+                    >
+                      🔔 Включить звук
+                    </button>
+                    <button
+                      onClick={() => handleMuteSelect('Отключены', true)}
+                      className="w-full p-2 rounded-xl hover:bg-[#283748] text-left text-xs font-semibold text-rose-300 transition cursor-pointer"
+                    >
+                      🔕 Без звука
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* BUTTON 3: ОЧИСТИТЬ ХРАНИЛИЩЕ */}
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full py-2.5 px-1 rounded-2xl bg-[#202b36] hover:bg-[#283748] border border-[#2b3c4f] flex flex-col items-center justify-center gap-1 text-rose-400 hover:text-rose-300 transition cursor-pointer shadow-md"
+              >
+                <Trash2 className="w-5 h-5" />
+                <span className="text-[11px] font-bold truncate">Очистить</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-2 py-2">
             
             {/* BUTTON 1: ВЫЗОВ (Видеозвонок / Обычный звонок) */}
             <div className="relative">
@@ -517,6 +647,7 @@ export const ChatInfoModal: React.FC<ChatInfoModalProps> = ({
             </div>
 
           </div>
+        )}
 
           {/* Horizontal Scrollable Media Filter Pills Bar (<- ->) */}
           <div className="pt-2 border-t border-[#283748]">
