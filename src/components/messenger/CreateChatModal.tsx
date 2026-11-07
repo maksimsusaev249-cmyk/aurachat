@@ -219,18 +219,8 @@ export const CreateChatModal: React.FC<CreateChatModalProps> = ({
         : `Создан новый ${chatType === 'channel' ? 'канал' : 'чат'}.`,
       lastMessageTime: 'Только что',
       unreadCount: 0,
-      joinRequests: isPrivate && requiresApproval
-        ? [
-            {
-              id: 'req_demo',
-              userId: 'usr_guest_demo',
-              userName: 'Дмитрий (Разработчик)',
-              username: 'dmitry_dev',
-              userAvatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=DanilCyber&backgroundColor=1f2937',
-              requestedAt: 'Только что'
-            }
-          ]
-        : []
+      joinRequests: [],
+      updatedAt: Date.now()
     };
 
     playSentSound();

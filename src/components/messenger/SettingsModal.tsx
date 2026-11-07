@@ -150,9 +150,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [username, setUsername] = useState(user.username);
-  const [bio, setBio] = useState(user.bio || 'Ведущий Fullstack Architect & Tech Lead AuraChat.');
-  const [phone, setPhone] = useState(user.phone || '+7 (999) 000-11-22');
+  const [bio, setBio] = useState(user.bio || 'Пользователь AuraChat');
+  const [phone, setPhone] = useState(user.phone || '');
   const [profileSaved, setProfileSaved] = useState(false);
+
+  React.useEffect(() => {
+    setDisplayName(user.displayName);
+    setUsername(user.username);
+    setBio(user.bio || 'Пользователь AuraChat');
+    setPhone(user.phone || '');
+    setCustomPinInput(user.pinCode || '');
+  }, [user.id, user.displayName, user.username, user.bio, user.phone, user.pinCode]);
 
   // Notifications State
   const [notifSound, setNotifSound] = useState(true);
@@ -1216,7 +1224,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </div>
 
                       {savedAccounts.map((acc) => {
-                        const isCurrent = acc.id === user.id || acc.username === user.username;
+                        const isCurrent = acc.id === user.id;
                         return (
                           <div
                             key={acc.id}
@@ -1243,9 +1251,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <span>@{acc.username}</span>
                                   <span className="text-slate-500">•</span>
                                   {acc.pinCode ? (
-                                    <span className="text-emerald-400">🔒 ПИН 6 цифр</span>
+                                    <span className="text-emerald-400">🔒 ПИН подключен</span>
                                   ) : (
-                                    <span className="text-amber-400">⚠️ ПИН не создан</span>
+                                    <span className="text-slate-400">Быстрый вход</span>
                                   )}
                                 </div>
                               </div>
@@ -1255,9 +1263,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 Текущий
                               </span>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-lg bg-[#5288c1] text-white text-[10px] font-bold">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onSwitchUser) {
+                                    playSentSound();
+                                    onSwitchUser(acc);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#5288c1] hover:bg-blue-500 text-white text-[10px] font-bold cursor-pointer"
+                              >
                                 Переключить
-                              </span>
+                              </button>
                             )}
                           </div>
                         );
@@ -1374,7 +1392,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="space-y-2 pt-1">
                   {savedAccounts.map((acc) => {
-                    const isCurrent = acc.id === user.id || acc.username === user.username;
+                    const isCurrent = acc.id === user.id;
                     return (
                       <div
                         key={acc.id}
@@ -1401,9 +1419,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <span>@{acc.username}</span>
                               <span>•</span>
                               {acc.pinCode ? (
-                                <span className="text-emerald-400 text-[10px]">🔒 ПИН 6 цифр</span>
+                                <span className="text-emerald-400 text-[10px]">🔒 ПИН подключен</span>
                               ) : (
-                                <span className="text-amber-400 text-[10px]">⚠️ ПИН не создан (предложит)</span>
+                                <span className="text-slate-400 text-[10px]">Быстрый вход</span>
                               )}
                             </div>
                           </div>
@@ -1413,8 +1431,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             Активен
                           </span>
                         ) : (
-                          <button className="px-3 py-1.5 rounded-xl bg-[#5288c1] hover:bg-blue-500 text-white text-xs font-bold cursor-pointer">
-                            Войти (PIN)
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onSwitchUser) {
+                                playSentSound();
+                                onSwitchUser(acc);
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-[#5288c1] hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
+                          >
+                            Переключить
                           </button>
                         )}
                       </div>

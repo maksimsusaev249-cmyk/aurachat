@@ -520,7 +520,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
       </div>
 
       {/* Chats & Global Search Results List */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-1.5 py-1 min-h-0 [-webkit-overflow-scrolling:touch] [touch-action:pan-y] space-y-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-1.5 py-1 min-h-0 [-webkit-overflow-scrolling:touch] [touch-action:pan-y] overscroll-contain space-y-2">
         {/* SECTION 1: User's Existing Chats */}
         {filteredChats.length > 0 && (
           <div>

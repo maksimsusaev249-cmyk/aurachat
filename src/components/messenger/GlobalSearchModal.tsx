@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, Chat, Community, Post, Story, Message } from '../../types';
 import { initialContactsList } from './ContactsModal';
 import { isVideoMedia } from '../../utils/mediaUtils';
-import { matchPhoneNumber, matchUserText, isCategoryKeywordMatch } from '../../utils/searchUtils';
+import { matchPhoneNumber, matchUserText, isCategoryKeywordMatch, isMockOrDemoAccount } from '../../utils/searchUtils';
+import { fetchUsersFromSharedServer } from '../../firebase';
 import {
   Search,
   X,
@@ -35,6 +36,7 @@ interface GlobalSearchModalProps {
   currentUser: User;
   allUsers: User[];
   chats: Chat[];
+  userChatsMap?: Record<string, Chat[]>;
   globalCatalogChats: Chat[];
   communities: Community[];
   posts: Post[];
@@ -74,6 +76,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   currentUser,
   allUsers,
   chats,
+  userChatsMap = {},
   globalCatalogChats,
   communities,
   posts,
@@ -90,6 +93,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 }) => {
   const [query, setQuery] = useState(initialQuery);
   const [activeTab, setActiveTab] = useState<SearchTab>(initialTab);
+  const [serverUsers, setServerUsers] = useState<User[]>([]);
   const [previewMedia, setPreviewMedia] = useState<{
     title: string;
     author: string;
@@ -100,16 +104,34 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     createdAt?: string;
   } | null>(null);
 
+  // Automatic background sync with Shared Server when search opens and while typing
   useEffect(() => {
     if (isOpen) {
       setQuery(initialQuery || '');
       setActiveTab(initialTab || 'all');
+      fetchUsersFromSharedServer('').then((remoteUsers) => {
+        if (Array.isArray(remoteUsers)) {
+          setServerUsers(remoteUsers);
+        }
+      });
     }
   }, [isOpen, initialQuery, initialTab]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      fetchUsersFromSharedServer('').then((remoteUsers) => {
+        if (Array.isArray(remoteUsers)) {
+          setServerUsers(remoteUsers);
+        }
+      });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [isOpen, query]);
+
   const cleanQuery = query.trim().toLowerCase().replace(/^@/, '');
 
-  // 1. Build complete deduplicated directory of all users/profiles across platform
+  // 1. Build complete deduplicated directory of real users/profiles across platform + Shared Server
   const allProfiles = useMemo(() => {
     const map = new Map<
       string,
@@ -124,10 +146,66 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       }
     >();
 
-    // Current user & saved accounts
-    allUsers.forEach((u) => {
-      const key = (u.username || u.id).toLowerCase();
-      map.set(key, {
+    const registerProfile = (u: {
+      id?: string;
+      name?: string;
+      username?: string;
+      avatar?: string;
+      bio?: string;
+      phone?: string;
+      email?: string;
+    }) => {
+      if (isMockOrDemoAccount(u)) return;
+      const rawName = (u.name || u.username || '').trim();
+      if (!rawName || rawName === 'Избранное' || rawName.startsWith('Избранное')) return;
+
+      const digitsInName = rawName.match(/^(?:Абонент|абонент)\s*(\d{4})$/);
+      const rawUsername = (u.username || '').trim().replace(/^@/, '');
+      const finalUsername =
+        rawUsername && rawUsername !== `abonent_${digitsInName?.[1]}`
+          ? rawUsername
+          : digitsInName
+          ? `user_${digitsInName[1]}`
+          : rawUsername || rawName.toLowerCase().replace(/\s+/g, '_');
+
+      const key = (finalUsername || u.id || rawName).toLowerCase();
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          id: u.id || `u_${key}`,
+          name: rawName,
+          username: finalUsername,
+          avatar:
+            u.avatar ||
+            `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(rawName)}&backgroundColor=182533`,
+          bio: u.bio || 'Пользователь AuraChat',
+          phone: u.phone,
+          email: u.email
+        });
+      } else {
+        map.set(key, {
+          ...existing,
+          phone: existing.phone || u.phone,
+          email: existing.email || u.email,
+          bio: existing.bio || u.bio
+        });
+      }
+    };
+
+    // Current user, saved accounts & Shared Server accounts
+    registerProfile({
+      id: currentUser.id,
+      name: currentUser.displayName,
+      username: currentUser.username,
+      avatar: currentUser.avatarUrl,
+      bio: currentUser.bio,
+      phone: currentUser.phone,
+      email: currentUser.email
+    });
+
+    [...allUsers, ...serverUsers].forEach((u) => {
+      if (!u) return;
+      registerProfile({
         id: u.id,
         name: u.displayName,
         username: u.username,
@@ -138,71 +216,31 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       });
     });
 
-    // Contacts directory
-    initialContactsList.forEach((c) => {
-      const key = (c.username || c.userId).toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          id: c.userId,
-          name: c.displayName,
-          username: c.username,
-          avatar: c.avatarUrl,
-          bio: c.statusText,
-          phone: c.phone
-        });
-      }
-    });
+    // Real non-mock chat members
+    const allKnownChats: Chat[] = [
+      ...chats,
+      ...globalCatalogChats,
+      ...(Object.values(userChatsMap || {}).flat() as Chat[])
+    ];
 
-    // Members from chats and global channels/groups
-    [...chats, ...globalCatalogChats].forEach((chat) => {
+    allKnownChats.forEach((chat) => {
+      if (!chat || !Array.isArray(chat.members)) return;
       chat.members.forEach((m) => {
-        const key = (m.username || m.userId).toLowerCase();
-        if (!map.has(key)) {
-          map.set(key, {
-            id: m.userId,
-            name: m.displayName,
-            username: m.username,
-            avatar: m.avatarUrl,
-            bio: m.customTitle || 'Пользователь AuraChat'
-          });
-        }
+        if (isMockOrDemoAccount(m)) return;
+        registerProfile({
+          id: m.userId,
+          name: m.displayName,
+          username: m.username,
+          avatar: m.avatarUrl,
+          bio: m.customTitle || 'Пользователь AuraChat'
+        });
       });
     });
 
-    // Authors from posts & reels
-    [...posts, ...reels].forEach((p) => {
-      const key = (p.userName || p.userId).toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          id: p.userId,
-          name: p.userName,
-          username: p.userName.toLowerCase().replace(/\s+/g, '_'),
-          avatar: p.userAvatar,
-          bio: 'Автор публикаций в AuraChat'
-        });
-      }
-    });
-
-    // Community owners & moderators
-    communities.forEach((comm) => {
-      if (comm.ownerUsername) {
-        const key = comm.ownerUsername.toLowerCase();
-        if (!map.has(key)) {
-          map.set(key, {
-            id: comm.ownerId,
-            name: comm.ownerName,
-            username: comm.ownerUsername,
-            avatar: comm.ownerAvatar || comm.avatarUrl,
-            bio: `Владелец сообщества «${comm.title}»`
-          });
-        }
-      }
-    });
-
     return Array.from(map.values());
-  }, [allUsers, chats, globalCatalogChats, posts, reels, communities]);
+  }, [currentUser, allUsers, serverUsers, chats, userChatsMap, globalCatalogChats]);
 
-  // Filtered Users / Profiles (supports name, @username, and any phone number format)
+  // Filtered Users / Profiles (supports name, @username, user_XXXX / Абонент XXXX, transliteration, phone)
   const matchedUsers = useMemo(() => {
     if (!cleanQuery) return allProfiles;
     const isGenericUserQuery = isCategoryKeywordMatch(cleanQuery, [
@@ -222,6 +260,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
         isGenericUserQuery ||
         matchUserText(u.name, cleanQuery) ||
         matchUserText(u.username, cleanQuery) ||
+        matchUserText(u.id, cleanQuery) ||
         matchPhoneNumber(u.phone, cleanQuery) ||
         matchUserText(u.bio, cleanQuery) ||
         matchUserText(u.email, cleanQuery)
@@ -253,10 +292,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     );
   }, [communities, cleanQuery]);
 
-  // Deduplicated Channels & Groups
+  // Deduplicated Channels & Groups & Direct Chats (excluding hidden secret chats)
   const allChannelsAndGroups = useMemo(() => {
     const map = new Map<string, Chat>();
     [...chats, ...globalCatalogChats].forEach((c) => {
+      if (!c || c.isSecretChat) return;
       if (c.type === 'channel' || c.type === 'group' || c.type === 'direct') {
         map.set(c.id, c);
       }
@@ -268,10 +308,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
     if (!cleanQuery) return allChannelsAndGroups;
     return allChannelsAndGroups.filter(
       (c) =>
-        c.title.toLowerCase().includes(cleanQuery) ||
-        (c.description && c.description.toLowerCase().includes(cleanQuery)) ||
-        (c.inviteCode && c.inviteCode.toLowerCase().includes(cleanQuery)) ||
-        (c.lastMessage && c.lastMessage.toLowerCase().includes(cleanQuery)) ||
+        matchUserText(c.title, cleanQuery) ||
+        matchUserText(c.description, cleanQuery) ||
+        matchUserText(c.inviteCode, cleanQuery) ||
+        matchUserText(c.lastMessage, cleanQuery) ||
+        (c.members && c.members.some((m) => matchUserText(m.displayName, cleanQuery) || matchUserText(m.username, cleanQuery))) ||
         (c.type === 'channel' && 'канал'.includes(cleanQuery)) ||
         (c.type === 'group' && ('группа'.includes(cleanQuery) || 'беседа'.includes(cleanQuery)))
     );

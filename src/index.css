@@ -23,24 +23,15 @@ button, input, select, textarea, div {
 }
 
 @layer utilities {
-  /* Custom Scrollbars */
+  /* Custom Scrollbars (clean & hidden on mobile iPhones 6s–18 so they never eat width) */
   .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.35);
+    width: 0px;
+    height: 0px;
+    display: none;
   }
 
   .scrollbar-none::-webkit-scrollbar {
@@ -107,7 +98,7 @@ button, input, select, textarea, div {
   animation: pulse-ring 2s infinite;
 }
 
-/* iOS & Android Mobile Optimization */
+/* iOS (iPhone 6s / SE 320px-375px through iPhone 18 Pro Max 440px) & Android Optimization */
 @supports (padding-top: env(safe-area-inset-top)) {
   body {
     --sat: env(safe-area-inset-top);
@@ -120,10 +111,20 @@ button, input, select, textarea, div {
 /* Momentum scrolling and touch handling on mobile devices */
 .overflow-y-auto, .overflow-x-auto {
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.overflow-y-auto::-webkit-scrollbar, .overflow-x-auto::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+  display: none;
 }
 
-/* Prevent horizontal shift or overflow on iPhone and Android screens */
-body, #root {
+/* Prevent horizontal shift or overflow on iPhone 6s through iPhone 18 */
+html, body, #root {
+  width: 100%;
   max-width: 100vw;
+  height: 100dvh;
   overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
 }

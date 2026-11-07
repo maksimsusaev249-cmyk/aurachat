@@ -33,15 +33,56 @@ export function matchPhoneNumber(userPhone?: string, rawQuery?: string): boolean
   return false;
 }
 
+const RU_TO_EN_MAP: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch',
+  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+};
+
+export function transliterateToLatin(text: string): string {
+  return text
+    .toLowerCase()
+    .split('')
+    .map((ch) => (RU_TO_EN_MAP[ch] !== undefined ? RU_TO_EN_MAP[ch] : ch))
+    .join('');
+}
+
 /**
- * Checks if search query matches user text (name, username, bio, email)
+ * Checks if search query matches user text (name, username, bio, email, id)
+ * Supports:
+ * - Case-insensitive substring matching
+ * - Cyrillic <-> Latin transliteration (e.g. "ИГОРЬ" <-> "igor", "МАКСИМ" <-> "maksim")
+ * - Prefix + digits equivalence: "USER_7564" matches "Абонент 7564" / "@abonent_7564" / "7564"
  */
 export function matchUserText(target?: string, rawQuery?: string): boolean {
   if (!target || !rawQuery) return false;
-  const cleanTarget = target.toLowerCase();
+  const cleanTarget = target.toLowerCase().replace(/^@/, '');
   const cleanQ = rawQuery.trim().toLowerCase().replace(/^@/, '');
   if (!cleanQ) return false;
-  return cleanTarget.includes(cleanQ);
+
+  // 1. Direct substring match
+  if (cleanTarget.includes(cleanQ)) return true;
+
+  // 2. Ignore spaces vs underscores (e.g. "user 7564" vs "user_7564", "абонент_7564" vs "абонент 7564")
+  const normTarget = cleanTarget.replace(/[\s_\-]+/g, '');
+  const normQ = cleanQ.replace(/[\s_\-]+/g, '');
+  if (normQ.length >= 2 && normTarget.includes(normQ)) return true;
+
+  // 3. Cyrillic <-> Latin transliteration match (e.g. "игорь" <-> "igor", "максим" <-> "maksim")
+  const latinTarget = transliterateToLatin(cleanTarget).replace(/[\s_\-]+/g, '');
+  const latinQ = transliterateToLatin(cleanQ).replace(/[\s_\-]+/g, '');
+  if (latinQ.length >= 2 && latinTarget.includes(latinQ)) return true;
+
+  // 4. User / Abonent numeric ID equivalence:
+  // If user searches "user_7564", "usr_7564", "abonent_7564", "абонент 7564" -> match "7564" in "Абонент 7564" or "@abonent_7564" or "@user_7564"
+  const prefixDigitsMatch = cleanQ.match(/^(?:user|usr|u|abonent|абонент|юзер)[\s_\-]*(\d{2,})$/i);
+  if (prefixDigitsMatch) {
+    const digits = prefixDigitsMatch[1];
+    if (cleanTarget.includes(digits)) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -66,13 +107,43 @@ export interface DirectoryUser {
   statusText?: string;
 }
 
+const DEMO_MOCK_IDS = new Set([
+  'usr_me',
+  'usr_durov',
+  'u_durov',
+  'usr_elena',
+  'usr_mark',
+  'usr_alex',
+  'usr_sofia',
+  'u_anna',
+  'usr_spammer_1',
+  'usr_troll_1'
+]);
+
+const DEMO_MOCK_USERNAMES = new Set([
+  'alex_dev',
+  'durov',
+  'elena_ux',
+  'mark_arch',
+  'alex_ops',
+  'sofia_live'
+]);
+
+export function isMockOrDemoAccount(u: any): boolean {
+  if (!u) return true;
+  const id = String(u.id || u.userId || '').trim();
+  const uname = String(u.username || '').trim().toLowerCase().replace(/^@/, '');
+  if (!id) return true;
+  if (DEMO_MOCK_IDS.has(id)) return true;
+  if (id.startsWith('peer_') || id.startsWith('usr_')) return true;
+  if (DEMO_MOCK_USERNAMES.has(uname)) return true;
+  return false;
+}
+
 /**
- * Builds a unified, deduplicated directory of ALL users across the platform:
- * - Saved accounts in state & localStorage
- * - Current user
- * - Custom contacts in localStorage & initial contacts
- * - Members from all user chats & catalog chats
- * - Community creators and moderators
+ * Builds a unified, deduplicated directory of ALL real users across the platform:
+ * - Registered accounts from state & Shared Server
+ * - Custom contacts in localStorage
  */
 export function getUnifiedGlobalUsersDirectory(
   allUsers: User[] = [],
@@ -84,19 +155,27 @@ export function getUnifiedGlobalUsersDirectory(
   const map = new Map<string, DirectoryUser>();
 
   const registerUser = (user: DirectoryUser) => {
-    if (!user.userId && !user.username) return;
+    if (!user.userId && !user.username && !user.displayName) return;
+    if (isMockOrDemoAccount(user)) return;
+    if (user.displayName === 'Избранное' || user.displayName?.startsWith?.('Избранное')) return;
     if (currentUserId && user.userId === currentUserId) return;
 
-    // Use username or userId as primary deduplication key
-    const primaryKey = (user.username || user.userId).toLowerCase().replace(/^@/, '');
+    const rawUsername = (user.username || user.userId || user.displayName)
+      .toLowerCase()
+      .replace(/^@/, '')
+      .replace(/\s+/g, '_');
+    const primaryKey = rawUsername;
     const existing = map.get(primaryKey);
 
     if (!existing) {
-      map.set(primaryKey, user);
+      map.set(primaryKey, {
+        ...user,
+        username: user.username || rawUsername
+      });
     } else {
-      // Merge extra details (phone, email, bio)
       map.set(primaryKey, {
         ...existing,
+        displayName: existing.displayName || user.displayName,
         phone: existing.phone || user.phone,
         email: existing.email || user.email,
         bio: existing.bio || user.bio,
@@ -110,8 +189,9 @@ export function getUnifiedGlobalUsersDirectory(
     }
   };
 
-  // 1. Saved Accounts & Current User
+  // 1. Registered Accounts from State & Shared Server
   allUsers.forEach((u) => {
+    if (!u || isMockOrDemoAccount(u)) return;
     registerUser({
       userId: u.id,
       displayName: u.displayName,
@@ -125,30 +205,7 @@ export function getUnifiedGlobalUsersDirectory(
     });
   });
 
-  // 2. Extra saved accounts from LocalStorage
-  try {
-    const raw = localStorage.getItem('aurachat_savedAccounts_v3') || localStorage.getItem('aurachat_savedAccounts');
-    if (raw) {
-      const parsed: User[] = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        parsed.forEach((u) => {
-          registerUser({
-            userId: u.id,
-            displayName: u.displayName,
-            username: u.username,
-            avatarUrl: u.avatarUrl,
-            phone: u.phone,
-            email: u.email,
-            bio: u.bio,
-            isOnline: u.isOnline,
-            statusText: u.lastSeen
-          });
-        });
-      }
-    }
-  } catch {}
-
-  // 3. Custom contacts from LocalStorage
+  // 2. Custom contacts from LocalStorage
   try {
     const rawContacts = localStorage.getItem('aurachat_custom_contacts');
     if (rawContacts) {
@@ -170,49 +227,30 @@ export function getUnifiedGlobalUsersDirectory(
     }
   } catch {}
 
-  // 4. Default Contacts
-  initialContactsList.forEach((c) => {
-    registerUser({
-      userId: c.userId,
-      displayName: c.displayName,
-      username: c.username,
-      avatarUrl: c.avatarUrl,
-      phone: c.phone,
-      bio: c.statusText,
-      isOnline: c.isOnline,
-      statusText: c.statusText
-    });
-  });
-
-  // 5. Members from all user chats
-  chats.forEach((chat) => {
-    chat.members.forEach((m) => {
-      registerUser({
-        userId: m.userId,
-        displayName: m.displayName,
-        username: m.username,
-        avatarUrl: m.avatarUrl,
-        bio: m.customTitle
+  // 3. Real members from user chats
+  const registerFromChatList = (chatList: Chat[]) => {
+    if (!Array.isArray(chatList)) return;
+    chatList.forEach((chat) => {
+      if (!chat || !Array.isArray(chat.members)) return;
+      chat.members.forEach((m) => {
+        if (isMockOrDemoAccount(m)) return;
+        registerUser({
+          userId: m.userId,
+          displayName: m.displayName,
+          username: m.username,
+          avatarUrl: m.avatarUrl,
+          bio: m.customTitle || 'Пользователь AuraChat'
+        });
       });
     });
-  });
+  };
 
-  // 6. Members from global catalog chats
-  globalCatalogChats.forEach((chat) => {
-    chat.members.forEach((m) => {
-      registerUser({
-        userId: m.userId,
-        displayName: m.displayName,
-        username: m.username,
-        avatarUrl: m.avatarUrl,
-        bio: m.customTitle
-      });
-    });
-  });
+  registerFromChatList(chats);
+  registerFromChatList(globalCatalogChats);
 
-  // 7. Community owners and moderators
+  // 4. Community owners (only real non-mock owners)
   communities.forEach((comm) => {
-    if (comm.ownerUsername) {
+    if (comm.ownerUsername && !isMockOrDemoAccount({ id: comm.ownerId, username: comm.ownerUsername })) {
       registerUser({
         userId: comm.ownerId,
         displayName: comm.ownerName,
@@ -223,17 +261,21 @@ export function getUnifiedGlobalUsersDirectory(
     }
   });
 
-  // Deduplicate array values
+  // Deduplicate array values by displayName/username
   const uniqueUsers: DirectoryUser[] = [];
-  const seenUserIds = new Set<string>();
+  const seenKeys = new Set<string>();
 
   map.forEach((u) => {
     const idKey = (u.userId || u.username).toLowerCase();
-    if (!seenUserIds.has(idKey)) {
-      seenUserIds.add(idKey);
+    const nameKey = `${u.displayName.toLowerCase()}__${u.username.toLowerCase()}`;
+    if (!seenKeys.has(idKey) && !seenKeys.has(nameKey)) {
+      seenKeys.add(idKey);
+      seenKeys.add(nameKey);
       uniqueUsers.push(u);
     }
   });
 
   return uniqueUsers;
 }
+
+

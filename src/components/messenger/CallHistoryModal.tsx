@@ -185,14 +185,14 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
             </div>
           )}
 
-          {/* Compact Scrollable Filter & Mode Tabs for Mobile & Desktop */}
+          {/* Compact Scrollable Filter & Mode Tabs for Mobile & Desktop (No visible scrollbar) */}
           <div
-            className="flex items-center gap-1.5 overflow-x-auto touch-pan-x overscroll-x-contain pb-1 pt-0.5 -mx-1 px-1"
-            style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' }}
+            className="flex items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain py-0.5"
+            style={{ WebkitOverflowScrolling: 'touch' }}
           >
             <button
               onClick={() => setActiveTab('all')}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1 ${
                 activeTab === 'all'
                   ? 'bg-[#5288c1] text-white shadow-sm'
                   : 'bg-[#1c2733] text-slate-300 hover:text-white hover:bg-[#243242]'
@@ -204,7 +204,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
             <button
               onClick={() => setActiveTab('missed')}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1 ${
                 activeTab === 'missed'
                   ? 'bg-rose-600 text-white shadow-sm'
                   : 'bg-[#1c2733] text-slate-300 hover:text-rose-300 hover:bg-[#243242]'
@@ -217,7 +217,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
             <button
               onClick={() => setActiveTab('outgoing')}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1 ${
                 activeTab === 'outgoing'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'bg-[#1c2733] text-slate-300 hover:text-emerald-300 hover:bg-[#243242]'
@@ -230,7 +230,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
             <button
               onClick={() => setActiveTab('contacts')}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1 ${
                 activeTab === 'contacts'
                   ? 'bg-[#5288c1] text-white shadow-sm'
                   : 'bg-[#1c2733] text-[#64b5f6] hover:text-white hover:bg-[#243242]'
@@ -242,7 +242,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
             <button
               onClick={() => setActiveTab('dialpad')}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap flex items-center gap-1 ${
                 activeTab === 'dialpad'
                   ? 'bg-[#5288c1] text-white shadow-sm'
                   : 'bg-[#1c2733] text-slate-300 hover:text-white hover:bg-[#243242]'
@@ -254,9 +254,9 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
           </div>
         </div>
 
-        {/* Main Content Area (Smooth Vertical Touch Scroll on Phones) */}
+        {/* Main Content Area (Smooth Vertical Touch Scroll on Phones without ugly scrollbar) */}
         <div
-          className="flex-1 min-h-0 overflow-y-auto touch-pan-y overscroll-y-contain p-2.5 sm:p-4 space-y-1.5"
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-none touch-pan-y overscroll-y-contain p-2.5 sm:p-4 space-y-1.5"
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
           
@@ -410,19 +410,19 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
                     <div
                       key={call.id}
                       onClick={() => onStartCall(call.contactName, call.avatarUrl, call.isVideo)}
-                      className={`p-2.5 sm:p-3.5 rounded-2xl border transition flex items-center justify-between gap-3 cursor-pointer group ${
+                      className={`p-2.5 sm:p-3.5 rounded-2xl border transition flex items-center justify-between gap-2 flex-nowrap cursor-pointer group ${
                         call.isMissed
                           ? 'bg-rose-950/15 border-rose-500/25 hover:bg-rose-950/25'
                           : 'bg-[#1b2633]/70 border-[#243344]/80 hover:bg-[#202b36] hover:border-[#30445a]'
                       }`}
                     >
                       {/* Left: Avatar + Name + Call Info */}
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative shrink-0">
                           <img
                             src={call.avatarUrl}
                             alt={call.contactName}
-                            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-[#243344] group-hover:ring-[#5288c1] transition"
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-[#243344] group-hover:ring-[#5288c1] transition"
                           />
                           <span
                             className={`absolute -bottom-0.5 -right-0.5 p-1 rounded-full text-white shadow ${
@@ -440,9 +440,9 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
                             <h4
-                              className={`font-bold text-sm sm:text-[15px] truncate ${
+                              className={`font-bold text-[13px] sm:text-[15px] truncate ${
                                 call.isMissed ? 'text-rose-300' : 'text-white'
                               }`}
                             >
@@ -455,16 +455,16 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1.5 mt-0.5 text-xs flex-wrap">
+                          <div className="flex items-center gap-1 mt-0.5 text-[11px] sm:text-xs whitespace-nowrap truncate">
                             <span
-                              className={`font-medium flex items-center gap-1 ${
+                              className={`font-medium flex items-center gap-1 shrink-0 ${
                                 call.isMissed ? 'text-rose-400' : 'text-emerald-400'
                               }`}
                             >
                               {call.isVideo ? (
-                                <Video className="w-3.5 h-3.5 shrink-0" />
+                                <Video className="w-3 h-3 shrink-0" />
                               ) : (
-                                <Phone className="w-3.5 h-3.5 shrink-0" />
+                                <Phone className="w-3 h-3 shrink-0" />
                               )}
                               <span>
                                 {call.isMissed
@@ -475,13 +475,13 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
                               </span>
                             </span>
 
-                            <span className="text-slate-500">•</span>
-                            <span className="text-slate-400">{call.timestamp}</span>
+                            <span className="text-slate-500 shrink-0">•</span>
+                            <span className="text-slate-400 truncate">{call.timestamp}</span>
 
                             {!call.isMissed && durationText && (
                               <>
-                                <span className="text-slate-500">•</span>
-                                <span className="text-slate-300 font-mono text-[11px]">
+                                <span className="text-slate-500 shrink-0">•</span>
+                                <span className="text-slate-300 font-mono text-[10px] sm:text-[11px] shrink-0">
                                   {durationText}
                                 </span>
                               </>
@@ -492,12 +492,12 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
                       {/* Right: Touch-friendly Call & Delete Buttons */}
                       <div
-                        className="flex items-center gap-1.5 shrink-0"
+                        className="flex items-center gap-1 sm:gap-1.5 shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
                           onClick={() => onStartCall(call.contactName, call.avatarUrl, false)}
-                          className="p-2.5 rounded-xl bg-[#242f3d] hover:bg-emerald-600 text-emerald-400 hover:text-white transition cursor-pointer"
+                          className="p-2 sm:p-2.5 rounded-xl bg-[#242f3d] hover:bg-emerald-600 text-emerald-400 hover:text-white transition cursor-pointer"
                           title={`Аудиозвонок ${call.contactName}`}
                         >
                           <Phone className="w-4 h-4" />
@@ -505,7 +505,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
                         <button
                           onClick={() => onStartCall(call.contactName, call.avatarUrl, true)}
-                          className="p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-[#64b5f6] hover:text-white transition cursor-pointer"
+                          className="p-2 sm:p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-[#64b5f6] hover:text-white transition cursor-pointer"
                           title={`Видеозвонок ${call.contactName}`}
                         >
                           <Video className="w-4 h-4" />
@@ -513,7 +513,7 @@ export const CallHistoryModal: React.FC<CallHistoryModalProps> = ({
 
                         <button
                           onClick={() => onDeleteCall(call.id)}
-                          className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-[#242f3d] transition cursor-pointer"
+                          className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-[#242f3d] transition cursor-pointer"
                           title="Удалить запись"
                         >
                           <Trash2 className="w-4 h-4" />

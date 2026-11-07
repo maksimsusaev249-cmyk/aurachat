@@ -47,30 +47,19 @@ export interface FirestoreErrorInfo {
 const QUOTA_STORAGE_KEY = 'aurachat_firestore_quota_exceeded_timestamp';
 
 function checkInitialQuota(): boolean {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem(QUOTA_STORAGE_KEY);
-      if (stored) {
-        const time = parseInt(stored, 10);
-        if (!isNaN(time) && Date.now() - time < 24 * 60 * 60 * 1000) {
-          return true;
-        }
-      }
-    }
-  } catch {}
-  // Default to true since daily free write units are exhausted on this Firebase project
-  return true;
+  // We have a real built-in Shared Express Server (/api/platform-state & /api/events),
+  // so platform synchronization is NEVER disabled or stuck in offline quota mode.
+  return false;
 }
 
 let isQuotaExceeded = checkInitialQuota();
+let isFirestoreBackendDisabled = true; // Disable direct Firestore writes to prevent quota errors; use Shared Server (/api/*) as primary real-time server
 let quotaExceededListeners: ((exceeded: boolean) => void)[] = [];
 
-// Immediately disconnect network if quota is exceeded to stop retry loops & backoff errors
-if (isQuotaExceeded) {
-  try {
-    disableNetwork(db).catch(() => {});
-  } catch {}
-}
+// Immediately disconnect direct Firestore network to avoid background retry loops while using Shared Server
+try {
+  disableNetwork(db).catch(() => {});
+} catch {}
 
 // Intercept and suppress internal @firebase/firestore console logs for quota exhaustion
 if (typeof window !== 'undefined') {
@@ -103,7 +92,7 @@ if (typeof window !== 'undefined') {
       try {
         event.preventDefault();
       } catch {}
-      setFirestoreQuotaExceeded(true);
+      isFirestoreBackendDisabled = true;
     }
   });
 }
@@ -121,25 +110,12 @@ export function subscribeToQuotaExceeded(callback: (exceeded: boolean) => void):
 }
 
 export function setFirestoreQuotaExceeded(exceeded: boolean = true) {
-  if (isQuotaExceeded === exceeded) return;
-  isQuotaExceeded = exceeded;
+  isFirestoreBackendDisabled = exceeded;
   try {
-    if (typeof localStorage !== 'undefined') {
-      if (exceeded) {
-        localStorage.setItem(QUOTA_STORAGE_KEY, String(Date.now()));
-      } else {
-        localStorage.removeItem(QUOTA_STORAGE_KEY);
-      }
+    if (exceeded) {
+      disableNetwork(db).catch(() => {});
     }
   } catch {}
-
-  if (exceeded) {
-    try {
-      disableNetwork(db).catch(() => {});
-    } catch {}
-  }
-
-  quotaExceededListeners.forEach((cb) => cb(exceeded));
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
@@ -171,9 +147,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   return errInfo;
 }
 
-// Initial connection test (skipped if quota is exceeded)
+// Initial connection test
 export async function testConnection() {
-  if (isQuotaExceeded) return;
+  if (isFirestoreBackendDisabled) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -181,8 +157,24 @@ export async function testConnection() {
   }
 }
 
-if (!isQuotaExceeded) {
-  testConnection();
+/**
+ * Fetch all registered users from the Shared Server (/api/users)
+ */
+export async function fetchUsersFromSharedServer(query: string = ''): Promise<User[]> {
+  try {
+    const url = query
+      ? `/api/users?q=${encodeURIComponent(query)}`
+      : '/api/users';
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.users) ? data.users : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -210,24 +202,7 @@ export async function loginWithGoogle(): Promise<User> {
     lastSeen: 'в сети'
   };
 
-  // Sync profile document to Firestore if quota is available
-  if (!isQuotaExceeded) {
-    try {
-      await setDoc(doc(db, 'users', fbUser.uid), {
-        id: mappedUser.id,
-        displayName: mappedUser.displayName,
-        username: mappedUser.username,
-        avatarUrl: mappedUser.avatarUrl,
-        email: mappedUser.email || '',
-        phone: mappedUser.phone || '',
-        bio: mappedUser.bio,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
-    }
-  }
-
+  await syncAccountToCloud(mappedUser);
   return mappedUser;
 }
 
@@ -251,6 +226,7 @@ export async function loginWithEmail(email: string, pass: string): Promise<User>
     lastSeen: 'в сети'
   };
 
+  await syncAccountToCloud(mappedUser);
   return mappedUser;
 }
 
@@ -281,23 +257,7 @@ export async function registerWithEmail(email: string, pass: string, displayName
     lastSeen: 'в сети'
   };
 
-  // Sync profile document to Firestore if quota is available
-  if (!isQuotaExceeded) {
-    try {
-      await setDoc(doc(db, 'users', fbUser.uid), {
-        id: mappedUser.id,
-        displayName: mappedUser.displayName,
-        username: mappedUser.username,
-        avatarUrl: mappedUser.avatarUrl,
-        email: mappedUser.email,
-        bio: mappedUser.bio,
-        createdAt: new Date().toISOString()
-      });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `users/${fbUser.uid}`);
-    }
-  }
-
+  await syncAccountToCloud(mappedUser);
   return mappedUser;
 }
 
@@ -329,11 +289,11 @@ export async function verifyPhoneCodeAndSignIn(confirmationResult: ConfirmationR
   const fbUser = result.user;
 
   const phoneClean = fbUser.phoneNumber || 'phone_user';
-  const username = `u_${phoneClean.replace(/[^0-9]/g, '').slice(-6)}`;
+  const username = `user_${phoneClean.replace(/[^0-9]/g, '').slice(-4)}`;
 
   const mappedUser: User = {
     id: fbUser.uid,
-    displayName: fbUser.displayName || `Пользователь ${phoneClean}`,
+    displayName: fbUser.displayName || `Абонент ${phoneClean.slice(-4)}`,
     username,
     phone: phoneClean,
     avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(fbUser.uid)}&backgroundColor=1e293b`,
@@ -342,22 +302,7 @@ export async function verifyPhoneCodeAndSignIn(confirmationResult: ConfirmationR
     lastSeen: 'в сети'
   };
 
-  if (!isQuotaExceeded) {
-    try {
-      await setDoc(doc(db, 'users', fbUser.uid), {
-        id: mappedUser.id,
-        displayName: mappedUser.displayName,
-        username: mappedUser.username,
-        avatarUrl: mappedUser.avatarUrl,
-        phone: mappedUser.phone,
-        bio: mappedUser.bio,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `users/${fbUser.uid}`);
-    }
-  }
-
+  await syncAccountToCloud(mappedUser);
   return mappedUser;
 }
 
@@ -389,13 +334,14 @@ export interface CloudPlatformState {
   calls?: CallRecord[];
   callsMap?: Record<string, CallRecord[]>;
   followingMap?: Record<string, Record<string, boolean>>;
+  deletedIds?: string[];
   updatedAt?: number;
   updatedBy?: string;
 }
 
 const CLOUD_SYNC_DOC_ID = '_aurachat_cloud_sync_v2';
 
-// Helper to strip undefined fields recursively so Firestore setDoc never rejects undefined values
+// Helper to strip undefined fields recursively
 function sanitizeForFirestore<T>(obj: T): T {
   try {
     return JSON.parse(JSON.stringify(obj));
@@ -405,45 +351,81 @@ function sanitizeForFirestore<T>(obj: T): T {
 }
 
 /**
- * Saves a user account and their personal chat list to Firestore `/users/{userId}` when online.
+ * Permanently deletes items (posts, messages, chats, stories, reels, calls) on the Shared Server (`/api/delete-item`)
+ */
+export async function deleteItemsFromCloud(
+  ids: string[],
+  options?: { clearChatId?: string; clearCallsUserId?: string }
+): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    await fetch('/api/delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids,
+        clearChatId: options?.clearChatId,
+        clearCallsUserId: options?.clearCallsUserId
+      })
+    });
+  } catch {}
+}
+
+/**
+ * Saves a user account and their personal chat list to the Shared Server (`/api/users/sync`)
  */
 export async function syncAccountToCloud(user: User, userChats?: Chat[]): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  if (isQuotaExceeded) return; // Prevent hammering backend when quota is exhausted
+  if (typeof window === 'undefined') return;
   try {
-    const payload = sanitizeForFirestore({
-      ...user,
-      ...(userChats ? { userChats } : {}),
-      updatedAt: new Date().toISOString()
+    const cleanPayload = sanitizeForFirestore({
+      user,
+      ...(userChats ? { userChats } : {})
     });
-    await setDoc(doc(db, 'users', user.id), payload, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`);
-  }
+    await fetch('/api/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanPayload)
+    });
+  } catch {}
 }
 
 let lastPlatformFingerprint = '';
 
 /**
  * Saves platform state (accounts, chats, channels, messages, communities, posts, reels, stories)
- * to Firestore `/chats/_aurachat_cloud_sync_v2` when online.
+ * to the Shared Server (`/api/platform-state`) across all browsers and devices.
  */
 export async function savePlatformStateToCloud(state: CloudPlatformState): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  if (isQuotaExceeded) return; // Halt writes when quota is exhausted
+  if (typeof window === 'undefined') return;
 
   try {
+    const totalMessagesCount = state.messagesMap
+      ? Object.values(state.messagesMap).reduce((acc, list) => acc + (Array.isArray(list) ? list.length : 0), 0)
+      : 0;
+    const totalUserChatsCount = state.userChatsMap
+      ? Object.values(state.userChatsMap).reduce((acc, list) => acc + (Array.isArray(list) ? list.length : 0), 0)
+      : 0;
+
     const currentFingerprint = JSON.stringify({
-      accounts: state.savedAccounts?.map((a) => a.id),
-      chats: state.globalCatalogChats?.map((c) => c.id),
-      communities: state.communities?.map((c) => c.id),
+      accounts: state.savedAccounts?.map((a) => `${a.id}:${a.username}:${a.displayName}:${a.isOnline}`),
+      userChats: totalUserChatsCount,
+      chats: state.globalCatalogChats?.map(
+        (c) =>
+          `${c.id}:${c.updatedAt || 0}:${c.joinRequests?.length || 0}:${c.members?.length || 0}`
+      ),
+      msgs: totalMessagesCount,
+      communities: state.communities?.map(
+        (c) =>
+          `${c.id}:${c.updatedAt || 0}:${c.joinRequests?.length || 0}:${c.subscribersUserIds?.length || 0}:${c.subscribersCount || 0}`
+      ),
       posts: state.posts?.length,
       reels: state.reels?.length,
-      stories: state.stories?.length
+      stories: state.stories?.length,
+      deleted: state.deletedIds?.length || 0
     });
 
     if (currentFingerprint === lastPlatformFingerprint) {
-      return; // Deduplicate: do not write identical data
+      return;
     }
     lastPlatformFingerprint = currentFingerprint;
 
@@ -451,38 +433,72 @@ export async function savePlatformStateToCloud(state: CloudPlatformState): Promi
       ...state,
       updatedAt: Date.now()
     });
-    await setDoc(doc(db, 'chats', CLOUD_SYNC_DOC_ID), cleanState, { merge: true });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `chats/${CLOUD_SYNC_DOC_ID}`);
-  }
+
+    await fetch('/api/platform-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanState)
+    });
+  } catch {}
 }
 
 /**
- * Subscribes to real-time Cloud Firestore state updates when online.
+ * Subscribes to real-time Shared Server state updates via SSE (`/api/events`) + initial & periodic fetch (`/api/platform-state`).
  */
 export function subscribeToCloudPlatformState(
   onUpdate: (cloudState: CloudPlatformState) => void
 ): () => void {
-  if (isQuotaExceeded) return () => {};
-  try {
-    let unsub = () => {};
-    unsub = onSnapshot(
-      doc(db, 'chats', CLOUD_SYNC_DOC_ID),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data() as CloudPlatformState;
-          onUpdate(data);
-        }
-      },
-      (err) => {
-        handleFirestoreError(err, OperationType.GET, `chats/${CLOUD_SYNC_DOC_ID}`);
-        try { unsub(); } catch {}
+  if (typeof window === 'undefined') return () => {};
+
+  let isDisposed = false;
+  let eventSource: EventSource | null = null;
+
+  const fetchLatestState = async () => {
+    if (isDisposed) return;
+    try {
+      const res = await fetch('/api/platform-state', {
+        method: 'GET',
+        headers: { Accept: 'application/json' }
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as CloudPlatformState;
+      if (data && !isDisposed) {
+        onUpdate(data);
       }
-    );
-    return unsub;
-  } catch {
-    return () => {};
-  }
+    } catch {}
+  };
+
+  // 1. Immediate initial fetch from Shared Server
+  fetchLatestState();
+
+  // 2. Real-time Server-Sent Events stream
+  try {
+    if ('EventSource' in window) {
+      eventSource = new EventSource('/api/events');
+      eventSource.addEventListener('PLATFORM_STATE', (event: MessageEvent) => {
+        if (isDisposed) return;
+        try {
+          const data = JSON.parse(event.data) as CloudPlatformState;
+          if (data) {
+            onUpdate(data);
+          }
+        } catch {}
+      });
+    }
+  } catch {}
+
+  // 3. Periodic poll fallback every 4 seconds
+  const pollInterval = setInterval(fetchLatestState, 4000);
+
+  return () => {
+    isDisposed = true;
+    clearInterval(pollInterval);
+    if (eventSource) {
+      try {
+        eventSource.close();
+      } catch {}
+    }
+  };
 }
 
 export interface CallSignalPayload {
@@ -496,68 +512,124 @@ export interface CallSignalPayload {
     | 'SCREEN_SHARE_STATE'
     | 'WEBRTC_OFFER'
     | 'WEBRTC_ANSWER'
-    | 'WEBRTC_ICE';
+    | 'WEBRTC_ICE'
+    | 'LIVE_VIDEO_FRAME';
   callId: string;
+  signalId?: string;
+  seq?: number;
+  senderPeerId?: string;
   callerId?: string;
   callerName?: string;
   callerUsername?: string;
   callerAvatar?: string;
   targetUserId?: string;
+  targetUserIds?: string[];
   targetUsername?: string;
+  targetPhone?: string;
   targetName?: string;
   responderId?: string;
   quickResponse?: string;
   isVideo?: boolean;
   isVideoEnabled?: boolean;
   isScreenSharing?: boolean;
+  frameDataUrl?: string;
+  frameSource?: 'camera' | 'screen';
   sdp?: string;
   candidate?: any;
   timestamp: number;
 }
 
 /**
- * Publishes a real-time call signal (OFFER, ANSWER, REJECT, END, CANCEL) to Cloud Firestore.
+ * Publishes a real-time call signal (OFFER, ANSWER, REJECT, END, CANCEL, WEBRTC) to the Shared Server (`/api/call-signal`).
  */
 export async function publishCallSignalToCloud(signal: CallSignalPayload): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-  if (isQuotaExceeded) return;
+  if (typeof window === 'undefined') return;
   try {
     const cleanSignal = sanitizeForFirestore({
       ...signal,
+      signalId: signal.signalId || `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       updatedAt: Date.now()
     });
-    await setDoc(doc(db, 'chats', '_aurachat_call_signal'), cleanSignal, { merge: false });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, 'chats/_aurachat_call_signal');
-  }
+    await fetch('/api/call-signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanSignal)
+    });
+  } catch {}
 }
 
 /**
- * Subscribes to real-time call signals from Cloud Firestore across all devices and accounts.
+ * Subscribes to real-time call signals from the Shared Server (`/api/events` & `/api/call-signal`) across all devices and accounts.
  */
 export function subscribeToCallSignalsFromCloud(
   onSignal: (signal: CallSignalPayload) => void
 ): () => void {
-  if (isQuotaExceeded) return () => {};
-  try {
-    let unsub = () => {};
-    unsub = onSnapshot(
-      doc(db, 'chats', '_aurachat_call_signal'),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data() as CallSignalPayload;
-          onSignal(data);
-        }
-      },
-      (err) => {
-        handleFirestoreError(err, OperationType.GET, 'chats/_aurachat_call_signal');
-        try { unsub(); } catch {}
+  if (typeof window === 'undefined') return () => {};
+
+  let isDisposed = false;
+  let lastSeenSeq = 0;
+  const processedSignalIds = new Set<string>();
+  let eventSource: EventSource | null = null;
+
+  const handleIncomingSignal = (sig: CallSignalPayload | null) => {
+    if (!sig || !sig.timestamp || isDisposed) return;
+    if (Date.now() - sig.timestamp > 120000) return;
+
+    const uniqueKey = sig.signalId || `${sig.type}_${sig.callId}_${sig.seq || sig.timestamp}`;
+    if (sig.type !== 'LIVE_VIDEO_FRAME') {
+      if (processedSignalIds.has(uniqueKey)) return;
+      processedSignalIds.add(uniqueKey);
+      if (processedSignalIds.size > 300) {
+        const first = processedSignalIds.values().next().value;
+        if (first) processedSignalIds.delete(first);
       }
-    );
-    return unsub;
-  } catch {
-    return () => {};
-  }
+    }
+
+    if (typeof sig.seq === 'number' && sig.seq > lastSeenSeq) {
+      lastSeenSeq = sig.seq;
+    }
+
+    onSignal(sig);
+  };
+
+  try {
+    if ('EventSource' in window) {
+      eventSource = new EventSource('/api/events');
+      eventSource.addEventListener('CALL_SIGNAL', (event: MessageEvent) => {
+        if (isDisposed) return;
+        try {
+          const data = JSON.parse(event.data) as CallSignalPayload;
+          handleIncomingSignal(data);
+        } catch {}
+      });
+    }
+  } catch {}
+
+  const pollTimer = setInterval(async () => {
+    if (isDisposed) return;
+    try {
+      const res = await fetch(`/api/call-signal?sinceSeq=${lastSeenSeq}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data?.signals) && data.signals.length > 0) {
+        data.signals.forEach((sig: CallSignalPayload) => handleIncomingSignal(sig));
+      } else if (data?.signal) {
+        handleIncomingSignal(data.signal);
+      }
+    } catch {}
+  }, 1200);
+
+  return () => {
+    isDisposed = true;
+    clearInterval(pollTimer);
+    if (eventSource) {
+      try {
+        eventSource.close();
+      } catch {}
+    }
+  };
 }
+
+
 
 

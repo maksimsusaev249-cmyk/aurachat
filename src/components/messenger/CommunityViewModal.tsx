@@ -46,7 +46,9 @@ import {
   Heart,
   Info,
   ChevronLeft,
-  Settings
+  Settings,
+  QrCode,
+  Link2
 } from 'lucide-react';
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
@@ -68,6 +70,8 @@ interface CommunityViewModalProps {
   onToggleLikePost?: (postId: string) => void;
   onAddComment?: (postId: string, comment: PostComment) => void;
   onDeleteComment?: (postId: string, commentId: string) => void;
+  onDeletePost?: (postId: string) => void;
+  initialCommunityTab?: string;
 }
 
 const presetBanners = [
@@ -119,12 +123,18 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   onOpenCommunityChat,
   onToggleLikePost,
   onAddComment,
-  onDeleteComment
+  onDeleteComment,
+  onDeletePost,
+  initialCommunityTab
 }) => {
   const [isCopied, setIsCopied] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showModsModal, setShowModsModal] = useState(false);
   const [showNewPostModal, setShowNewPostModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteModalTab, setInviteModalTab] = useState<'add_person' | 'link' | 'qr'>('add_person');
+  const [customInviteUsername, setCustomInviteUsername] = useState('');
+  const [addedUserIdsLocal, setAddedUserIdsLocal] = useState<Record<string, boolean>>({});
 
   // Edit form states (доступно только создателю и модераторам)
   const [editTitle, setEditTitle] = useState('');
@@ -161,8 +171,14 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   const [modCustomTitle, setModCustomTitle] = useState('Модератор');
   const [postAuthorMode, setPostAuthorMode] = useState<'community' | 'user'>('community');
 
-  // Community Tabs state: 'posts' | 'clips' | 'videos' | 'events' | 'home'
-  const [activeTab, setActiveTab] = useState<string>('posts');
+  // Community Tabs state: 'posts' | 'clips' | 'videos' | 'events' | 'home' | 'requests'
+  const [activeTab, setActiveTab] = useState<string>(initialCommunityTab || 'posts');
+
+  React.useEffect(() => {
+    if (initialCommunityTab) {
+      setActiveTab(initialCommunityTab);
+    }
+  }, [initialCommunityTab, community?.id]);
 
   // Tab Editor modal
   const [showTabEditorModal, setShowTabEditorModal] = useState(false);
@@ -233,12 +249,30 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
 
   if (!community) return null;
 
-  const isOwner = community.ownerId === currentUser.id;
+  const normalizedCurrentUsername = (currentUser.username || '').replace(/^@/, '').trim().toLowerCase();
+  const normalizedOwnerUsername = (community.ownerUsername || '').replace(/^@/, '').trim().toLowerCase();
+  const isOwner =
+    community.ownerId === currentUser.id ||
+    (Boolean(normalizedCurrentUsername) &&
+      Boolean(normalizedOwnerUsername) &&
+      normalizedCurrentUsername === normalizedOwnerUsername);
   const isSubscribed = community.subscribersUserIds.includes(currentUser.id);
-  const isModerator = community.moderators.some((m) => m.userId === currentUser.id);
+  const isModerator = community.moderators.some(
+    (m) =>
+      m.userId === currentUser.id ||
+      (Boolean(normalizedCurrentUsername) &&
+        Boolean(m.username) &&
+        m.username.replace(/^@/, '').trim().toLowerCase() === normalizedCurrentUsername)
+  );
   const canManage = isOwner || isModerator;
   const pendingRequests = community.joinRequests || [];
-  const hasPendingRequest = pendingRequests.some((r) => r.userId === currentUser.id);
+  const hasPendingRequest = pendingRequests.some(
+    (r) =>
+      r.userId === currentUser.id ||
+      (Boolean(normalizedCurrentUsername) &&
+        Boolean(r.username) &&
+        r.username.replace(/^@/, '').trim().toLowerCase() === normalizedCurrentUsername)
+  );
   const isPrivateLocked = community.isPrivate && !isSubscribed && !canManage;
 
   const activeTabsList = (community.tabsConfig || [
@@ -346,39 +380,15 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
 
   const handleToggleSubscribe = () => {
     playSentSound();
+    const now = Date.now();
     if (isSubscribed) {
       const updatedSubscribers = community.subscribersUserIds.filter((id) => id !== currentUser.id);
       onUpdateCommunity({
         ...community,
         subscribersUserIds: updatedSubscribers,
-        subscribersCount: updatedSubscribers.length
+        subscribersCount: updatedSubscribers.length,
+        updatedAt: now
       });
-      return;
-    }
-
-    // Если сообщество закрытое и пользователь не владелец/модератор — отправляем или отменяем заявку
-    if (community.isPrivate && !canManage) {
-      if (hasPendingRequest) {
-        onUpdateCommunity({
-          ...community,
-          joinRequests: pendingRequests.filter((r) => r.userId !== currentUser.id)
-        });
-      } else {
-        onUpdateCommunity({
-          ...community,
-          joinRequests: [
-            ...pendingRequests,
-            {
-              id: 'jreq_' + Date.now(),
-              userId: currentUser.id,
-              userName: currentUser.displayName,
-              userAvatar: currentUser.avatarUrl,
-              username: currentUser.username,
-              requestedAt: 'Только что'
-            }
-          ]
-        });
-      }
       return;
     }
 
@@ -386,7 +396,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     onUpdateCommunity({
       ...community,
       subscribersUserIds: updatedSubscribers,
-      subscribersCount: updatedSubscribers.length
+      subscribersCount: updatedSubscribers.length,
+      updatedAt: now
     });
   };
 
@@ -401,7 +412,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
       ...community,
       joinRequests: updatedRequests,
       subscribersUserIds: updatedSubscribers,
-      subscribersCount: updatedSubscribers.length
+      subscribersCount: updatedSubscribers.length,
+      updatedAt: Date.now()
     });
   };
 
@@ -409,7 +421,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     playReactionSound();
     onUpdateCommunity({
       ...community,
-      joinRequests: pendingRequests.filter((r) => r.userId !== targetUserId)
+      joinRequests: pendingRequests.filter((r) => r.userId !== targetUserId),
+      updatedAt: Date.now()
     });
   };
 
@@ -606,12 +619,28 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={handleCopyLink}
-              className="px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
-              title="Скопировать ссылку на сообщество"
+              onClick={() => {
+                setInviteModalTab('add_person');
+                setShowInviteModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Добавить человека, дать ссылку или QR-код"
             >
-              {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5 text-[#71aaeb]" />}
-              <span className="hidden sm:inline">{isCopied ? 'Скопировано' : 'Поделиться'}</span>
+              <UserPlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Добавить человека</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setInviteModalTab(community.isPrivate ? 'link' : 'qr');
+                setShowInviteModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
+              title="Ссылка и QR-код сообщества"
+            >
+              <QrCode className="w-3.5 h-3.5 text-[#71aaeb]" />
+              <span className="hidden sm:inline">Ссылка / QR</span>
             </button>
 
             {canManage && (
@@ -745,39 +774,25 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: VK Action Buttons */}
-                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                  {/* Right: VK Action Buttons (Single non-wrapping row on iPhone 6s through iPhone 18) */}
+                  <div className="flex items-center gap-1.5 w-full sm:w-auto flex-nowrap sm:shrink-0">
                     <button
                       onClick={handleToggleSubscribe}
-                      className={`px-4 py-2 rounded-lg text-xs sm:text-[13px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0 ${
                         isSubscribed
                           ? 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb]'
-                          : hasPendingRequest
-                          ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
                           : 'bg-[#0077FF] hover:bg-[#0066DD] text-white'
                       }`}
                     >
                       {isSubscribed ? (
                         <>
-                          <UserCheck className="w-4 h-4" />
-                          <span>Вы подписаны</span>
+                          <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Вы подписаны</span>
                         </>
-                      ) : community.isPrivate && !canManage ? (
-                        hasPendingRequest ? (
-                          <>
-                            <Lock className="w-4 h-4 text-amber-400" />
-                            <span>Заявка отправлена (Отменить)</span>
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-4 h-4" />
-                            <span>Оставить заявку</span>
-                          </>
-                        )
                       ) : (
                         <>
-                          <UserPlus className="w-4 h-4" />
-                          <span>Подписаться</span>
+                          <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Подписаться</span>
                         </>
                       )}
                     </button>
@@ -786,10 +801,10 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowNewPostModal(true)}
-                        className="px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs sm:text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer"
+                        className="flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0"
                       >
-                        <Plus className="w-4 h-4 text-[#71aaeb]" />
-                        <span>Опубликовать</span>
+                        <Plus className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
+                        <span className="truncate">Опубликовать</span>
                       </button>
                     )}
 
@@ -807,11 +822,11 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                           });
                         }
                       }}
-                      className="px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs sm:text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer"
+                      className="flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0"
                       title={`Перейти в чат сообщества (диалог с владельцем: ${ownerDisplayName})`}
                     >
-                      <MessageSquare className="w-4 h-4 text-[#71aaeb]" />
-                      <span>Сообщение</span>
+                      <MessageSquare className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
+                      <span className="truncate">Сообщение</span>
                     </button>
                   </div>
                 </div>
@@ -1088,132 +1103,8 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
             </div>
 
             {/* ================================================================= */}
-            {/* БЛОК УПРАВЛЕНИЯ ЗАЯВКАМИ ДЛЯ ВЛАДЕЛЬЦА И МОДЕРАТОРА               */}
+            {/* ОСНОВНОЙ БЛОК: ПОДПИСЧИКИ + БЫСТРАЯ ЗАПИСЬ + ВКЛАДКИ + СТЕНА     */}
             {/* ================================================================= */}
-            {canManage && pendingRequests.length > 0 && (
-              <div className="p-4 rounded-2xl bg-[#222222] border border-amber-500/40 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
-                      <UserCheck className="w-4 h-4" />
-                    </span>
-                    <div>
-                      <h3 className="text-xs sm:text-sm font-bold text-white">
-                        Заявки на вступление в сообщество ({pendingRequests.length})
-                      </h3>
-                      <p className="text-[11px] text-[#939393]">
-                        Подтвердите или отклоните заявки пользователей как владелец или модератор
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {pendingRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="p-3 rounded-xl bg-[#19191a] border border-[#2e2e2e] flex flex-wrap items-center justify-between gap-3"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src={req.userAvatar}
-                          alt={req.userName}
-                          className="w-9 h-9 rounded-full object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">
-                            {req.userName}
-                          </div>
-                          <div className="text-[11px] text-[#828282] truncate">
-                            @{req.username} · Подал(а) заявку: {req.requestedAt}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleApproveJoinRequest(req.userId)}
-                          className="px-3 py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Подтвердить</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineJoinRequest(req.userId)}
-                          className="px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-rose-600/20 text-[#939393] hover:text-rose-400 text-xs font-semibold cursor-pointer"
-                        >
-                          Отклонить
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ================================================================= */}
-            {/* ЕСЛИ СООБЩЕСТВО ЗАКРЫТОЕ И ПОЛЬЗОВАТЕЛЬ НЕ ПОДПИСАН (ЗАКРЫТЫЙ ПРОФИЛЬ) */}
-            {/* ================================================================= */}
-            {isPrivateLocked ? (
-              <div className="p-6 sm:p-10 rounded-2xl bg-[#222222] border border-[#2e2e2e] text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
-                  <Lock className="w-8 h-8" />
-                </div>
-
-                <div className="space-y-1.5 max-w-md mx-auto">
-                  <h2 className="text-base sm:text-lg font-bold text-white">
-                    Закрытый профиль сообщества
-                  </h2>
-                  <p className="text-xs sm:text-[13px] text-[#939393] leading-relaxed">
-                    Это закрытое сообщество. Доступ к записям, фотографиям и материалам открывается только после подтверждения вашей заявки владельцем ({ownerDisplayName}) или модератором.
-                  </p>
-                </div>
-
-                {!hasPendingRequest ? (
-                  <div className="pt-2 flex flex-col items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleToggleSubscribe}
-                      className="px-6 py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs sm:text-sm font-semibold flex items-center gap-2 cursor-pointer shadow-lg"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>Оставить заявку</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="pt-2 max-w-md mx-auto space-y-3">
-                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs leading-relaxed">
-                      ⏳ <strong>Заявка отправлена!</strong> Ожидайте подтверждения от владельца сообщества ({ownerDisplayName}) или модератора.
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApproveJoinRequest(currentUser.id)}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                        title="Подтвердить заявку от лица владельца или модератора"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Подтвердить заявку (Владелец / Модератор)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleToggleSubscribe}
-                        className="px-4 py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white text-xs font-semibold cursor-pointer"
-                      >
-                        Отменить заявку
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-            /* ================================================================= */
-            /* ОСНОВНОЙ БЛОК: ПОДПИСЧИКИ + БЫСТРАЯ ЗАПИСЬ + ВКЛАДКИ + СТЕНА     */
-            /* ================================================================= */
             <div className="space-y-3.5 min-w-0">
               
               {/* VK Widget: Подписчики (выше: между «О сообществе» и «Что у вас нового?») */}
@@ -1376,40 +1267,56 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                                   </div>
                                 </div>
 
-                                {post.mediaUrl && (
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setFullscreenMedia({
-                                          url: post.mediaUrl,
-                                          type: post.mediaType === 'video' ? 'video' : 'image',
-                                          title: post.caption || community.title
-                                        })
-                                      }
-                                      className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#71aaeb] flex items-center gap-1 cursor-pointer"
-                                      title="Открыть медиа на весь экран"
-                                    >
-                                      <Maximize2 className="w-3.5 h-3.5" />
-                                      <span className="hidden sm:inline">На весь экран</span>
-                                    </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {post.mediaUrl && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setFullscreenMedia({
+                                            url: post.mediaUrl,
+                                            type: post.mediaType === 'video' ? 'video' : 'image',
+                                            title: post.caption || community.title
+                                          })
+                                        }
+                                        className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#71aaeb] flex items-center gap-1 cursor-pointer"
+                                        title="Открыть медиа на весь экран"
+                                      >
+                                        <Maximize2 className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">На весь экран</span>
+                                      </button>
 
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          downloadMediaFile(
+                                            post.mediaUrl,
+                                            `aurachat_${community.title}_${post.id}`,
+                                            post.mediaType === 'video' ? 'video' : 'image'
+                                          )
+                                        }
+                                        className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white cursor-pointer"
+                                        title="Скачать файл"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {onDeletePost && (
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        downloadMediaFile(
-                                          post.mediaUrl,
-                                          `aurachat_${community.title}_${post.id}`,
-                                          post.mediaType === 'video' ? 'video' : 'image'
-                                        )
-                                      }
-                                      className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white cursor-pointer"
-                                      title="Скачать файл"
+                                      onClick={() => {
+                                        playReactionSound();
+                                        onDeletePost(post.id);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-rose-500/20 text-[#939393] hover:text-rose-400 transition cursor-pointer"
+                                      title="Удалить публикацию навсегда"
                                     >
-                                      <Download className="w-3.5 h-3.5" />
+                                      <Trash2 className="w-3.5 h-3.5" />
                                     </button>
-                                  </div>
-                                )}
+                                  )}
+                                </div>
                               </div>
 
                               {/* VK Post Text */}
@@ -1964,10 +1871,210 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                   )}
                 </div>
             </div>
-            )}
           </div>
         </div>
       </div>
+
+      {/* MODAL 0: ДОБАВИТЬ ЧЕЛОВЕКА, ПРИВАТНАЯ ССЫЛКА ИЛИ QR-КОД СООБЩЕСТВА */}
+      {showInviteModal && (
+        <div
+          className="fixed inset-0 z-[75] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setShowInviteModal(false)}
+        >
+          <div
+            className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 text-white relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowInviteModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl bg-[#2c2d2e] text-[#939393] hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 pr-8">
+              <img
+                src={community.avatarUrl}
+                alt={community.title}
+                className="w-11 h-11 rounded-2xl object-cover border border-[#333338]"
+              />
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-white truncate">{community.title}</h3>
+                <p className="text-[11px] text-[#71aaeb]">
+                  {community.isPrivate ? '🔒 Приватное сообщество (вход по ссылке или QR)' : '🌐 Открытое сообщество'}
+                </p>
+              </div>
+            </div>
+
+            {/* 3 Tabs: Добавить человека | Ссылка | QR-код */}
+            <div className="grid grid-cols-3 gap-1.5 bg-[#141416] p-1 rounded-2xl border border-[#2a2a2e]">
+              <button
+                type="button"
+                onClick={() => setInviteModalTab('add_person')}
+                className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  inviteModalTab === 'add_person'
+                    ? 'bg-[#0077FF] text-white shadow'
+                    : 'text-[#939393] hover:text-white'
+                }`}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Добавить</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInviteModalTab('link')}
+                className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  inviteModalTab === 'link'
+                    ? 'bg-[#0077FF] text-white shadow'
+                    : 'text-[#939393] hover:text-white'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Ссылка</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInviteModalTab('qr')}
+                className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  inviteModalTab === 'qr'
+                    ? 'bg-[#0077FF] text-white shadow'
+                    : 'text-[#939393] hover:text-white'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>QR-код</span>
+              </button>
+            </div>
+
+            {inviteModalTab === 'add_person' && (
+              <div className="space-y-3">
+                <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                  {sampleContactsForMods.map((c) => {
+                    const isSub =
+                      community.subscribersUserIds.includes(c.userId) || addedUserIdsLocal[c.userId];
+                    return (
+                      <div
+                        key={c.userId}
+                        className="p-2.5 rounded-xl bg-[#252529] border border-[#333338] flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img src={c.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{c.displayName}</div>
+                            <div className="text-[11px] text-[#828282] truncate">@{c.username}</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isSub}
+                          onClick={() => {
+                            playSentSound();
+                            setAddedUserIdsLocal((prev) => ({ ...prev, [c.userId]: true }));
+                            if (!community.subscribersUserIds.includes(c.userId)) {
+                              const nextSubs = [...community.subscribersUserIds, c.userId];
+                              onUpdateCommunity({
+                                ...community,
+                                subscribersUserIds: nextSubs,
+                                subscribersCount: Math.max(community.subscribersCount + 1, nextSubs.length),
+                                updatedAt: Date.now()
+                              });
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                            isSub
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-[#0077FF] hover:bg-[#0066DD] text-white'
+                          }`}
+                        >
+                          {isSub ? '✓ Добавлен' : '+ Добавить'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Добавить по @username */}
+                <div className="pt-2 border-t border-[#2e2e32] flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={customInviteUsername}
+                    onChange={(e) => setCustomInviteUsername(e.target.value)}
+                    placeholder="Введите имя или @username..."
+                    className="flex-1 bg-[#252529] border border-[#34343a] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[#0077FF]"
+                  />
+                  <button
+                    type="button"
+                    disabled={!customInviteUsername.trim()}
+                    onClick={() => {
+                      const clean = customInviteUsername.trim();
+                      if (!clean) return;
+                      playSentSound();
+                      const uid = 'usr_invited_' + Date.now();
+                      const nextSubs = [...community.subscribersUserIds, uid];
+                      onUpdateCommunity({
+                        ...community,
+                        subscribersUserIds: nextSubs,
+                        subscribersCount: community.subscribersCount + 1,
+                        updatedAt: Date.now()
+                      });
+                      setCustomInviteUsername('');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-white text-xs font-bold cursor-pointer shrink-0"
+                  >
+                    Добавить
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {inviteModalTab === 'link' && (
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-2xl bg-[#141416] border border-[#2e2e32] space-y-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#71aaeb] block">
+                    {community.isPrivate ? 'Приватная ссылка для приглашения' : 'Публичная ссылка сообщества'}
+                  </span>
+                  <div className="text-xs font-mono text-white break-all bg-[#222226] p-2.5 rounded-xl border border-[#333338]">
+                    {`https://aurachat.app/community/join?code=${community.inviteCode}`}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="w-full py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow"
+                  >
+                    {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{isCopied ? 'Ссылка скопирована!' : 'Скопировать ссылку'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {inviteModalTab === 'qr' && (
+              <div className="space-y-3 text-center">
+                <div className="bg-white p-4 rounded-3xl w-52 h-52 mx-auto flex items-center justify-center shadow-xl">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
+                      `https://aurachat.app/community/join?code=${community.inviteCode}`
+                    )}&bgcolor=ffffff&color=0f172a&margin=8`}
+                    alt="QR Code"
+                    className="w-full h-full object-contain rounded-xl"
+                  />
+                </div>
+                <p className="text-xs text-[#939393]">
+                  Отсканируйте QR-код камерой телефона для мгновенного входа в «{community.title}»
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="w-full py-2.5 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-white text-xs font-bold cursor-pointer"
+                >
+                  {isCopied ? 'Ссылка скопирована!' : 'Скопировать ссылку под QR'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* MODAL 1: PUBLISH POST TO COMMUNITY FORM */}
       {showNewPostModal && (

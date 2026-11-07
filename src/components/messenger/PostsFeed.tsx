@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Post, PostComment, CommunityGif, Chat, Community } from '../../types';
+import { Post, PostComment, CommunityGif, Chat, Community, User } from '../../types';
 import { 
   Heart, 
   MessageCircle, 
@@ -37,7 +37,10 @@ import {
   Clock,
   CheckCircle2,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  Check,
+  UserCheck,
+  UserPlus
 } from 'lucide-react';
 import { playPostMusicTrack, stopPostMusicTrack, playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
@@ -52,8 +55,10 @@ interface PostsFeedProps {
   chats?: Chat[];
   communities?: Community[];
   currentUserId?: string;
+  currentUser?: User;
   initialFeedTab?: 'all' | 'communities';
-  onSelectCommunity?: (community: Community) => void;
+  onSelectCommunity?: (community: Community, initialTab?: string) => void;
+  onUpdateCommunity?: (updated: Community) => void;
   onOpenCreateCommunity?: () => void;
   communityGifs?: CommunityGif[];
   onBackToChats: () => void;
@@ -67,6 +72,8 @@ interface PostsFeedProps {
   onToggleLikePost?: (postId: string) => void;
   onAddComment?: (postId: string, comment: PostComment) => void;
   onDeleteComment?: (postId: string, commentId: string) => void;
+  onDeletePost?: (postId: string) => void;
+  onPublishPost?: (newPost: Post) => void;
   onRefreshFeed?: () => void;
   refreshCount?: number;
 }
@@ -85,8 +92,10 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
   chats = [],
   communities = [],
   currentUserId = 'usr_me',
+  currentUser,
   initialFeedTab = 'all',
   onSelectCommunity,
+  onUpdateCommunity,
   onOpenCreateCommunity,
   communityGifs,
   onBackToChats, 
@@ -100,6 +109,8 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
   onToggleLikePost,
   onAddComment,
   onDeleteComment,
+  onDeletePost,
+  onPublishPost,
   onRefreshFeed,
   refreshCount = 0
 }) => {
@@ -109,10 +120,16 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFreshBadge, setShowFreshBadge] = useState(false);
 
+  // "Сначала картинка и надпись, потом отправляешь" — модальное окно публикации
+  const [isQuickPublishOpen, setIsQuickPublishOpen] = useState(false);
+  const [publishMediaUrl, setPublishMediaUrl] = useState<string>('');
+  const [publishMediaIsVideo, setPublishMediaIsVideo] = useState<boolean>(false);
+  const [publishCaption, setPublishCaption] = useState<string>('');
+
   // Feed Tab: 'all' | 'communities'
   const [feedTab, setFeedTab] = useState<'all' | 'communities'>(initialFeedTab);
-  // Community Sub-Tab: 'subscribed' (На кого подписан) | 'unsubscribed' (На кого не подписан / Каталог)
-  const [commSubTab, setCommSubTab] = useState<'subscribed' | 'unsubscribed'>('subscribed');
+  // Community Sub-Tab: 'subscribed' (На кого подписан) | 'unsubscribed' (На кого не подписан / Каталог) | 'requests' (Заявки для создателя)
+  const [commSubTab, setCommSubTab] = useState<'subscribed' | 'unsubscribed' | 'requests'>('subscribed');
   const [commSearchQuery, setCommSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [userPollVotes, setUserPollVotes] = useState<Record<string, number>>({});
@@ -155,6 +172,42 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
 
   const handleDeleteComment = (postId: string, commentId: string) => {
     onDeleteComment?.(postId, commentId);
+  };
+
+  const handleDeletePostItem = (postId: string) => {
+    playReactionSound();
+    setLocalPosts((prev) => prev.filter((p) => p.id !== postId));
+    onDeletePost?.(postId);
+  };
+
+  const handleConfirmQuickPublish = () => {
+    if (!publishMediaUrl && !publishCaption.trim()) return;
+    playSentSound();
+    const newPost: Post = {
+      id: 'post_' + Date.now(),
+      userId: currentUser?.id || currentUserId,
+      userName: currentUser?.displayName || 'Пользователь',
+      userAvatar:
+        currentUser?.avatarUrl ||
+        'https://api.dicebear.com/7.x/adventurer/svg?seed=AlexNova&backgroundColor=1e293b',
+      mediaUrl: publishMediaUrl || '',
+      images: publishMediaUrl ? [publishMediaUrl] : [],
+      mediaType: publishMediaIsVideo ? 'video' : publishMediaUrl ? 'image' : 'text',
+      caption: publishCaption.trim(),
+      likesCount: 0,
+      viewsCount: 1,
+      commentsCount: 0,
+      comments: [],
+      createdAt: new Date().toISOString(),
+      type: 'post'
+    };
+
+    setLocalPosts((prev) => [newPost, ...prev]);
+    onPublishPost?.(newPost);
+    setPublishMediaUrl('');
+    setPublishMediaIsVideo(false);
+    setPublishCaption('');
+    setIsQuickPublishOpen(false);
   };
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   
@@ -345,16 +398,14 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 <RefreshCw className={`w-3.5 h-3.5 text-[#71aaeb] shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span className="truncate">Обновить</span>
               </button>
-              {onOpenStudio && (
-                <button
-                  onClick={onOpenStudio}
-                  className="h-8 px-2 sm:px-3 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-[11px] sm:text-xs font-semibold transition text-white flex items-center justify-center gap-1 cursor-pointer shadow-sm"
-                  title="Опубликовать запись"
-                >
-                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Опубликовать</span>
-                </button>
-              )}
+              <button
+                onClick={() => setIsQuickPublishOpen(true)}
+                className="h-8 px-2 sm:px-3 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-[11px] sm:text-xs font-semibold transition text-white flex items-center justify-center gap-1 cursor-pointer shadow-sm"
+                title="Опубликовать картинку с надписью"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Опубликовать</span>
+              </button>
               <button
                 onClick={onBackToChats}
                 className="h-8 px-2 sm:px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[11px] sm:text-xs font-semibold text-[#71aaeb] hover:text-white transition cursor-pointer flex items-center justify-center gap-1"
@@ -366,22 +417,44 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
             </div>
           </div>
 
-          {/* VK "Что у вас нового?" Composer Strip */}
-          {onOpenStudio && (
+          {/* Lightweight & Clean Composer Strip with GIF & Photo buttons */}
+          <div className="flex items-center gap-2.5 p-2 sm:p-2.5 rounded-2xl bg-[#1a1a1c] border border-[#2e2e32] transition">
+            <img
+              src={
+                currentUser?.avatarUrl ||
+                'https://api.dicebear.com/7.x/adventurer/svg?seed=AlexNova&backgroundColor=1e293b'
+              }
+              alt="Мой профиль"
+              className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-[#0077FF]/40"
+            />
             <div
-              onClick={onOpenStudio}
-              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] cursor-pointer transition"
+              onClick={() => setIsQuickPublishOpen(true)}
+              className="flex-1 min-w-0 px-3 py-1.5 rounded-xl bg-[#242428] hover:bg-[#2b2b30] cursor-pointer transition text-xs text-[#939393] hover:text-[#e1e3e6] truncate"
             >
-              <span className="text-xs text-[#828282]">Что у вас нового?</span>
-              <div className="flex items-center gap-2 text-[#828282]">
-                <ImageIcon className="w-4 h-4 hover:text-[#e1e3e6]" />
-                <Music className="w-4 h-4 hover:text-[#e1e3e6]" />
-              </div>
+              Что у вас нового? Картинка, надпись или гифка...
             </div>
-          )}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsQuickPublishOpen(true)}
+                className="p-1.5 rounded-lg text-[#71aaeb] hover:bg-[#2b2b30] transition cursor-pointer"
+                title="Прикрепить фото / видео"
+              >
+                <ImageIcon className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsQuickPublishOpen(true)}
+                className="px-2 py-1 rounded-lg bg-[#0077FF]/15 hover:bg-[#0077FF]/25 text-[#71aaeb] hover:text-white text-[10px] font-bold transition cursor-pointer border border-[#0077FF]/30"
+                title="Выбрать GIF-анимацию"
+              >
+                GIF
+              </button>
+            </div>
+          </div>
 
-          {/* VK Feed Category Tabs: Новости | Сообщества */}
-          <div className="flex items-center gap-2 pt-1 border-t border-[#2e2e2e]">
+          {/* VK Feed Category Tabs: Рекомендации | Сообщества */}
+          <div className="flex items-center gap-2 pt-1 border-t border-[#2a2a2e]">
             <button
               onClick={() => {
                 setFeedTab('all');
@@ -437,10 +510,10 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
             <div className="space-y-3">
               {/* Top Search & Create Community Bar */}
               <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl p-3.5 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-bold text-sm text-white">Сообщества AuraChat</h3>
-                    <p className="text-[11px] text-[#939393]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm text-white truncate">Сообщества AuraChat</h3>
+                    <p className="text-[11px] text-[#939393] truncate">
                       Ваши подписки и каталог открытых и закрытых сообществ
                     </p>
                   </div>
@@ -448,9 +521,9 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                   {onOpenCreateCommunity && (
                     <button
                       onClick={onOpenCreateCommunity}
-                      className="px-3 py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+                      className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-[11px] sm:text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
                       <span>Создать сообщество</span>
                     </button>
                   )}
@@ -478,20 +551,20 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 </div>
 
                 {/* Sub-tabs: Мои подписки vs Не подписан (Каталог) */}
-                <div className="flex items-center gap-2 pt-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     onClick={() => {
                       setCommSubTab('subscribed');
                       setCommSearchQuery('');
                     }}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                       !isSearching && commSubTab === 'subscribed'
                         ? 'bg-[#0077FF] text-white'
                         : 'bg-[#2c2d2e] text-[#e1e3e6] hover:bg-[#363738]'
                     }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>Мои подписки</span>
+                    <span className="truncate">Мои подписки</span>
                   </button>
 
                   <button
@@ -499,14 +572,14 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                       setCommSubTab('unsubscribed');
                       setCommSearchQuery('');
                     }}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                       !isSearching && commSubTab === 'unsubscribed'
                         ? 'bg-[#0077FF] text-white'
                         : 'bg-[#2c2d2e] text-[#e1e3e6] hover:bg-[#363738]'
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5 shrink-0" />
-                    <span>Не подписан</span>
+                    <span className="truncate">Не подписан</span>
                   </button>
                 </div>
               </div>
@@ -525,11 +598,11 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                       Создайте своё сообщество или найдите существующее через поиск.
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <div className="flex items-center justify-center gap-2 pt-1">
                     {onOpenCreateCommunity && (
                       <button
                         onClick={onOpenCreateCommunity}
-                        className="px-4 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer transition flex items-center gap-1.5"
+                        className="px-4 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 whitespace-nowrap"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Создать сообщество</span>
@@ -537,7 +610,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                     )}
                     <button
                       onClick={() => setCommSubTab('unsubscribed')}
-                      className="px-4 py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs font-semibold cursor-pointer transition"
+                      className="px-4 py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs font-semibold cursor-pointer transition whitespace-nowrap"
                     >
                       Каталог сообществ
                     </button>
@@ -549,53 +622,50 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
               <div className="space-y-2.5">
                 {filteredComms.map((comm) => {
                   const isSub = comm.subscribersUserIds.includes(currentUserId);
-                  const hasPendingReq = (comm.joinRequests || []).some(
-                    (r) => r.userId === currentUserId
-                  );
 
                   return (
                     <div
                       key={comm.id}
                       onClick={() => onSelectCommunity?.(comm)}
-                      className="p-4 rounded-2xl bg-[#222222] border border-[#2e2e2e] hover:border-[#0077FF]/60 transition flex flex-col gap-3 cursor-pointer"
+                      className="p-3.5 rounded-2xl bg-[#222222] border border-[#2e2e2e] hover:border-[#0077FF]/60 transition flex flex-col gap-2.5 cursor-pointer"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center justify-between gap-2.5 flex-nowrap">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="relative shrink-0">
                             <img
                               src={comm.avatarUrl}
                               alt=""
-                              className="w-12 h-12 rounded-full object-cover border border-[#2e2e2e]"
+                              className="w-11 h-11 rounded-full object-cover border border-[#2e2e2e]"
                             />
                             {comm.isPrivate && (
                               <span
                                 className="absolute -bottom-0.5 -right-0.5 p-1 rounded-full bg-[#141414] border border-[#2e2e2e] text-amber-400"
                                 title="Закрытое сообщество"
                               >
-                                <Lock className="w-3 h-3" />
+                                <Lock className="w-2.5 h-2.5" />
                               </span>
                             )}
                           </div>
 
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <h3 className="font-bold text-sm text-white truncate">
                                 {comm.title}
                               </h3>
                               {comm.isPrivate ? (
-                                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-semibold flex items-center gap-1 shrink-0">
-                                  <Lock className="w-2.5 h-2.5" />
-                                  <span>Закрытое сообщество</span>
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-semibold flex items-center gap-1 shrink-0 whitespace-nowrap">
+                                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                                  <span>Закрытое</span>
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-md bg-[#2c2d2e] text-[#71aaeb] text-[10px] font-medium flex items-center gap-1 shrink-0">
-                                  <Globe className="w-2.5 h-2.5" />
+                                <span className="px-1.5 py-0.5 rounded-md bg-[#2c2d2e] text-[#71aaeb] text-[10px] font-medium flex items-center gap-1 shrink-0 whitespace-nowrap">
+                                  <Globe className="w-2.5 h-2.5 shrink-0" />
                                   <span>Открытое</span>
                                 </span>
                               )}
                             </div>
 
-                            <p className="text-xs text-[#828282] mt-0.5">
+                            <p className="text-[11px] text-[#828282] mt-0.5 truncate">
                               {comm.subscribersCount} подписчик(ов) • Владелец: {comm.ownerName}
                             </p>
                           </div>
@@ -607,29 +677,13 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                             e.stopPropagation();
                             onSelectCommunity?.(comm);
                           }}
-                          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap ${
                             isSub
                               ? 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb]'
-                              : hasPendingReq
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                               : 'bg-[#0077FF] hover:bg-[#0066DD] text-white'
                           }`}
                         >
-                          {isSub ? (
-                            <span>Открыть</span>
-                          ) : hasPendingReq ? (
-                            <>
-                              <Clock className="w-3.5 h-3.5" />
-                              <span>Заявка отправлена</span>
-                            </>
-                          ) : comm.isPrivate ? (
-                            <>
-                              <Lock className="w-3.5 h-3.5" />
-                              <span>Открыть (Закрытое)</span>
-                            </>
-                          ) : (
-                            <span>Перейти</span>
-                          )}
+                          <span>{isSub ? 'Открыть' : 'Перейти'}</span>
                         </button>
                       </div>
 
@@ -666,17 +720,143 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                 Опубликуйте первую запись с фото, музыкой, опросом или видео.
               </p>
             </div>
-            {onOpenStudio && (
-              <div className="pt-1">
+            <div className="pt-1">
+              <button
+                onClick={() => setIsQuickPublishOpen(true)}
+                className="px-4 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Опубликовать</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: СНАЧАЛА КАРТИНКА И НАДПИСЬ, ПОТОМ ОТПРАВЛЯЕШЬ (ОПУБЛИКОВАТЬ) */}
+        {isQuickPublishOpen && (
+          <div
+            className="fixed inset-0 z-[90] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+            onClick={() => setIsQuickPublishOpen(false)}
+          >
+            <div
+              className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 text-white"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-[#0077FF]/20 text-[#71aaeb]">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Новая публикация</h3>
+                    <p className="text-[11px] text-[#939393]">
+                      1. Выберите картинку · 2. Напишите надпись · 3. Отправьте
+                    </p>
+                  </div>
+                </div>
                 <button
-                  onClick={onOpenStudio}
-                  className="px-4 py-2 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer transition inline-flex items-center gap-1.5 shadow-sm"
+                  type="button"
+                  onClick={() => setIsQuickPublishOpen(false)}
+                  className="p-1.5 rounded-xl bg-[#2c2d2e] text-[#939393] hover:text-white cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Шаг 1: Картинка */}
+              {publishMediaUrl ? (
+                <div className="relative rounded-2xl overflow-hidden bg-[#121214] border border-[#2e2e32] flex items-center justify-center max-h-72">
+                  {publishMediaIsVideo ? (
+                    <video
+                      src={publishMediaUrl}
+                      controls
+                      playsInline
+                      className="max-h-72 w-full object-contain"
+                    />
+                  ) : (
+                    <img
+                      src={publishMediaUrl}
+                      alt="Предпросмотр публикации"
+                      className="max-h-72 w-full object-contain"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPublishMediaUrl('');
+                      setPublishMediaIsVideo(false);
+                    }}
+                    className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-black/80 hover:bg-rose-600 text-white transition cursor-pointer"
+                    title="Убрать картинку"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="w-full h-44 rounded-2xl border-2 border-dashed border-[#0077FF]/50 bg-[#0077FF]/10 hover:bg-[#0077FF]/15 flex flex-col items-center justify-center gap-2 cursor-pointer transition p-4 text-center">
+                  <div className="w-11 h-11 rounded-full bg-[#0077FF] text-white flex items-center justify-center shadow-lg">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div className="text-xs font-bold text-white">Выберите картинку или видео</div>
+                  <div className="text-[11px] text-[#939393]">
+                    Нажмите, чтобы загрузить фото с устройства перед публикацией
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        const isVid = f.type.startsWith('video/');
+                        const { url } = await fileToPersistentUrl(f);
+                        setPublishMediaUrl(url);
+                        setPublishMediaIsVideo(isVid);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              )}
+
+              {/* Шаг 2: Надпись */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-[#939393] block">
+                  Надпись к публикации:
+                </label>
+                <textarea
+                  rows={3}
+                  value={publishCaption}
+                  onChange={(e) => setPublishCaption(e.target.value)}
+                  placeholder="Введите надпись к картинке..."
+                  className="w-full bg-[#252529] border border-[#34343a] focus:border-[#0077FF] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white outline-none placeholder-[#828282] resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                {onOpenStudio && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsQuickPublishOpen(false);
+                      onOpenStudio();
+                    }}
+                    className="px-3 py-2.5 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb] text-xs font-semibold cursor-pointer transition"
+                  >
+                    Расширенная студия
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!publishMediaUrl && !publishCaption.trim()}
+                  onClick={handleConfirmQuickPublish}
+                  className="flex-1 py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition"
+                >
+                  <Send className="w-3.5 h-3.5" />
                   <span>Опубликовать</span>
                 </button>
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -744,21 +924,35 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                   </div>
                 </div>
 
-                {/* VK Follow Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    playReactionSound();
-                    onToggleFollow?.(post.userId || 'u_' + post.userName);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
-                    followingUserIds[post.userId || 'u_' + post.userName]
-                      ? 'bg-[#2c2d2e] text-[#939393] hover:bg-[#363738]'
-                      : 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb]'
-                  }`}
-                >
-                  {followingUserIds[post.userId || 'u_' + post.userName] ? 'Вы подписаны' : 'Подписаться'}
-                </button>
+                {/* VK Follow & Delete Post Buttons */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playReactionSound();
+                      onToggleFollow?.(post.userId || 'u_' + post.userName);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
+                      followingUserIds[post.userId || 'u_' + post.userName]
+                        ? 'bg-[#2c2d2e] text-[#939393] hover:bg-[#363738]'
+                        : 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb]'
+                    }`}
+                  >
+                    {followingUserIds[post.userId || 'u_' + post.userName] ? 'Вы подписаны' : 'Подписаться'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeletePostItem(post.id);
+                    }}
+                    className="p-2 rounded-lg bg-[#2c2d2e] hover:bg-rose-500/20 text-[#939393] hover:text-rose-400 transition cursor-pointer"
+                    title="Удалить публикацию навсегда"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               {/* VK Post Caption (shown ABOVE media like authentic VKontakte) */}

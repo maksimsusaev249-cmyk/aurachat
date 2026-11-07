@@ -289,7 +289,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
         </div>
 
         {/* Contacts List */}
-        <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 space-y-1.5 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 space-y-1.5 scrollbar-none">
           {filteredContacts.map((contact) => (
             <div
               key={contact.userId}
@@ -297,14 +297,14 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                 onStartDirectChat(contact);
                 onClose();
               }}
-              className="p-2.5 sm:p-3.5 rounded-2xl bg-[#1b2633]/70 border border-[#243344]/80 hover:bg-[#202b36] hover:border-[#30445a] transition flex items-center justify-between gap-3 group cursor-pointer"
+              className="p-2.5 sm:p-3.5 rounded-2xl bg-[#1b2633]/70 border border-[#243344]/80 hover:bg-[#202b36] hover:border-[#30445a] transition flex items-center justify-between gap-2 flex-nowrap group cursor-pointer"
             >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className="relative shrink-0">
                   <img
                     src={contact.avatarUrl}
                     alt={contact.displayName}
-                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-[#283748] group-hover:ring-[#5288c1] transition"
+                    className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover ring-2 ring-[#283748] group-hover:ring-[#5288c1] transition"
                   />
                   {contact.isOnline && (
                     <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#17212b]" />
@@ -312,16 +312,16 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm sm:text-[15px] text-white truncate flex items-center gap-1.5">
+                  <div className="font-bold text-[13px] sm:text-[15px] text-white truncate flex items-center gap-1">
                     <span className="truncate">{contact.displayName}</span>
                     <ShieldCheck className="w-3.5 h-3.5 text-[#64b5f6] shrink-0" />
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-400 truncate mt-0.5">
-                    <span className="font-mono">@{contact.username}</span>
+                  <div className="flex items-center gap-2 text-[11px] sm:text-xs text-slate-400 truncate mt-0.5">
+                    <span className="font-mono truncate">@{contact.username}</span>
                     <span className="hidden sm:inline">•</span>
                     <span className="font-mono hidden sm:inline">{contact.phone}</span>
                   </div>
-                  <div className={`text-[11px] mt-0.5 ${contact.isOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <div className={`text-[11px] mt-0.5 truncate ${contact.isOnline ? 'text-emerald-400' : 'text-slate-500'}`}>
                     {contact.statusText}
                   </div>
                 </div>
@@ -329,7 +329,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
 
               {/* Action buttons (Chat, Audio Call, Video Call) */}
               <div
-                className="flex items-center gap-1.5 shrink-0"
+                className="flex items-center gap-1 sm:gap-1.5 shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
@@ -337,7 +337,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                     onStartDirectChat(contact);
                     onClose();
                   }}
-                  className="p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-slate-200 hover:text-white transition cursor-pointer"
+                  className="p-2 sm:p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-slate-200 hover:text-white transition cursor-pointer"
                   title="Написать сообщение"
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -347,7 +347,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                     onStartCall(contact, false);
                     onClose();
                   }}
-                  className="p-2.5 rounded-xl bg-[#242f3d] hover:bg-emerald-600 text-emerald-400 hover:text-white transition cursor-pointer"
+                  className="p-2 sm:p-2.5 rounded-xl bg-[#242f3d] hover:bg-emerald-600 text-emerald-400 hover:text-white transition cursor-pointer"
                   title="Аудиозвонок"
                 >
                   <Phone className="w-4 h-4" />
@@ -357,7 +357,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
                     onStartCall(contact, true);
                     onClose();
                   }}
-                  className="p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-[#64b5f6] hover:text-white transition cursor-pointer"
+                  className="p-2 sm:p-2.5 rounded-xl bg-[#242f3d] hover:bg-[#5288c1] text-[#64b5f6] hover:text-white transition cursor-pointer"
                   title="Видеозвонок"
                 >
                   <Video className="w-4 h-4" />
@@ -374,13 +374,13 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
         </div>
 
         {/* Bottom Footer */}
-        <div className="px-4 py-3 bg-[#131c26] border-t border-[#202d3a] flex items-center justify-between gap-3 shrink-0">
-          <span className="text-xs text-slate-400">
+        <div className="px-3.5 sm:px-4 py-3 bg-[#131c26] border-t border-[#202d3a] flex items-center justify-between gap-2 shrink-0">
+          <span className="text-[11px] sm:text-xs text-slate-400 truncate min-w-0">
             Нажмите на контакт для перехода в диалог
           </span>
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl bg-[#242f3d] hover:bg-[#30445a] text-white text-xs font-semibold transition cursor-pointer"
+            className="px-4 sm:px-5 py-2 rounded-xl bg-[#242f3d] hover:bg-[#30445a] text-white text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
           >
             Закрыть
           </button>

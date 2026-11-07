@@ -45,7 +45,10 @@ import {
   Pin,
   PinOff,
   Search,
-  Copy
+  Copy,
+  UserPlus,
+  Image as ImageIcon,
+  FolderPlus
 } from 'lucide-react';
 import { CreateTopicModal } from './CreateTopicModal';
 import { InviteAndQRModal } from './InviteAndQRModal';
@@ -75,7 +78,7 @@ interface ChatAreaProps {
   onBackMobile?: () => void;
   onCreateTopic?: (chatId: string, title: string, icon: string) => void;
   onAddReaction?: (messageId: string, emoji: string) => void;
-  onRequestJoin?: (chatId: string, guestUser: { userName: string; username: string; avatarUrl: string }) => void;
+  onRequestJoin?: (chatId: string, guestUser: { userId?: string; userName: string; username: string; avatarUrl: string }) => void;
   onApproveRequest?: (chatId: string, request: any) => void;
   onDeclineRequest?: (chatId: string, requestId: string) => void;
   onAddCommunityGif?: (gif: CommunityGif) => void;
@@ -95,7 +98,53 @@ interface ChatAreaProps {
   onlinePeerMap?: Record<string, number>;
 }
 
-const quickEmojis = ['❤️', '👍', '🔥', '😂', '🚀', '👏', '⚡', '🎉', '💡', '👀', '🤝', '☕'];
+const quickEmojis = ['❤️', '👍', '🔥', '😂', '🚀', '👏', '⚡', '🎉', '💡', '👀', '🤝', '☕', '😎', '🥳', '🤩', '🙌', '💯', '✨'];
+
+export interface CustomStickerItem {
+  id: string;
+  url: string;
+  title?: string;
+  createdAt: number;
+}
+
+export interface CustomStickerPack {
+  id: string;
+  name: string;
+  coverUrl?: string;
+  authorId?: string;
+  authorName?: string;
+  shareCode?: string;
+  stickers: CustomStickerItem[];
+}
+
+const STICKER_STORAGE_KEY = 'aurachat_custom_sticker_packs_v1';
+
+const defaultStickerPacks: CustomStickerPack[] = [
+  {
+    id: 'pack_my_first',
+    name: 'Мои стикеры',
+    stickers: [
+      {
+        id: 'stk_def_1',
+        url: 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=AuraCool&backgroundColor=transparent',
+        title: 'Круто!',
+        createdAt: 1710000000000
+      },
+      {
+        id: 'stk_def_2',
+        url: 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=AuraLove&backgroundColor=transparent',
+        title: 'Супер ❤️',
+        createdAt: 1710000001000
+      },
+      {
+        id: 'stk_def_3',
+        url: 'https://api.dicebear.com/7.x/bottts/svg?seed=AuraBot&backgroundColor=transparent',
+        title: 'На связи',
+        createdAt: 1710000002000
+      }
+    ]
+  }
+];
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   chat,
@@ -176,6 +225,54 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [isInviteAndQROpen, setIsInviteAndQROpen] = useState(false);
   const [isJoinRequestsOpen, setIsJoinRequestsOpen] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'emojis' | 'stickers'>('stickers');
+
+  // Custom Sticker Packs State (самодельные стикеры и паки через плюсик)
+  const [stickerPacks, setStickerPacks] = useState<CustomStickerPack[]>(() => {
+    try {
+      const raw = localStorage.getItem(STICKER_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return defaultStickerPacks;
+  });
+  const [activeStickerPackId, setActiveStickerPackId] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem(STICKER_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed[0]?.id) return parsed[0].id;
+      }
+    } catch {}
+    return 'pack_my_first';
+  });
+  const [isCreatePackModalOpen, setIsCreatePackModalOpen] = useState(false);
+  const [newStickerPackName, setNewStickerPackName] = useState('');
+  const [newStickerPackCover, setNewStickerPackCover] = useState<string>('');
+  const [isAddStickerModalOpen, setIsAddStickerModalOpen] = useState(false);
+  const [newStickerRawImage, setNewStickerRawImage] = useState<string>('');
+  const [newStickerCaption, setNewStickerCaption] = useState<string>('');
+  const [viewingPackModal, setViewingPackModal] = useState<{
+    pack: CustomStickerPack;
+    isSaved: boolean;
+  } | null>(null);
+
+  // Pre-Send Image/Video + Caption Preview State ("сначала картинка и надпись, потом отправляешь")
+  const [pendingMediaAttachment, setPendingMediaAttachment] = useState<{
+    url: string;
+    isVideo: boolean;
+    fileName?: string;
+  } | null>(null);
+  const [pendingMediaCaption, setPendingMediaCaption] = useState<string>('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STICKER_STORAGE_KEY, JSON.stringify(stickerPacks));
+    } catch {}
+  }, [stickerPacks]);
+
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
@@ -196,10 +293,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showManagerTemplates, setShowManagerTemplates] = useState(false);
 
   // RBAC active role in this chat
-  const defaultMemberRole = (chat.members?.find((m) => m.userId === currentUser.id)?.role || 'owner') as 'owner' | 'admin' | 'member';
+  const matchedMember = chat.members?.find(
+    (m) =>
+      m.userId === currentUser.id ||
+      (m.username && currentUser.username && m.username.toLowerCase() === currentUser.username.toLowerCase())
+  );
+  const defaultMemberRole = (matchedMember?.role ||
+    (!chat.members || chat.members.length === 0 ? 'owner' : 'member')) as 'owner' | 'admin' | 'member';
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'member'>(defaultMemberRole);
 
   const isOwnerOrAdmin = userRole === 'owner' || userRole === 'admin';
+  const isMemberOfChat = Boolean(matchedMember) || !chat.requiresApproval;
+  const pendingChatRequests = chat.joinRequests || [];
+  const myPendingChatRequest = pendingChatRequests.find(
+    (r) =>
+      r.userId === currentUser.id ||
+      (r.username && currentUser.username && r.username.toLowerCase() === currentUser.username.toLowerCase())
+  );
+  const hasPendingChatRequest = Boolean(myPendingChatRequest);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatTopicsRef = useRef<HTMLDivElement>(null);
 
@@ -242,9 +353,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     } else {
       setActiveTopicId(null);
     }
-    const role = (chat.members?.find((m) => m.userId === currentUser.id)?.role || 'owner') as 'owner' | 'admin' | 'member';
+    const found = chat.members?.find(
+      (m) =>
+        m.userId === currentUser.id ||
+        (m.username && currentUser.username && m.username.toLowerCase() === currentUser.username.toLowerCase())
+    );
+    const hasExplicitRealOwner = chat.members?.some(
+      (m) => m.role === 'owner' && !m.userId.startsWith('usr_')
+    );
+    const role = (found?.role || (!hasExplicitRealOwner ? 'owner' : 'member')) as 'owner' | 'admin' | 'member';
     setUserRole(role);
-  }, [chat.id]);
+  }, [chat.id, currentUser.id, currentUser.username, chat.members]);
 
   // Close 3-dots dropdown menu when clicking outside
   useEffect(() => {
@@ -364,13 +483,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     setShowEmojiPicker(false);
     setShowManagerTemplates(false);
 
-    const replyMeta = replyingToMessage ? {
-      replyTo: {
-        id: replyingToMessage.id,
-        senderName: replyingToMessage.senderName,
-        content: replyingToMessage.content || 'Медиасообщение'
-      }
-    } : undefined;
+    const replyMeta = {
+      ...(replyingToMessage
+        ? {
+            replyTo: {
+              id: replyingToMessage.id,
+              senderName: replyingToMessage.senderName,
+              content: replyingToMessage.content || 'Медиасообщение'
+            }
+          }
+        : {}),
+      ...(activeTopicId ? { topicId: activeTopicId } : {})
+    };
 
     setReplyingToMessage(null);
     playSentSound();
@@ -389,11 +513,285 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const handleCopyInvite = () => {
-    if (chat.inviteCode) {
-      navigator.clipboard.writeText(`https://aurachat.app/join/${chat.inviteCode}`);
-      setShowInviteCopied(true);
-      setTimeout(() => setShowInviteCopied(false), 2000);
+    const code = chat.inviteCode || chat.id.replace(/^chat_/, '');
+    navigator.clipboard.writeText(`https://aurachat.app/join/${code}`);
+    setShowInviteCopied(true);
+    setTimeout(() => setShowInviteCopied(false), 2000);
+  };
+
+  // Создание нового пака стикеров (до 70 шт. максимально, с названием и главной обложкой)
+  const handleCreateStickerPack = async () => {
+    const title = newStickerPackName.trim();
+    if (!title) return;
+    playSentSound();
+    let finalCoverUrl = newStickerPackCover.trim();
+    if (!finalCoverUrl) {
+      finalCoverUrl = `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${encodeURIComponent(title)}&backgroundColor=141416`;
     }
+    const packId = 'pack_' + Date.now();
+    const shareCode = 'stk_' + Math.random().toString(36).slice(2, 9);
+    const newPack: CustomStickerPack = {
+      id: packId,
+      name: title,
+      coverUrl: finalCoverUrl,
+      authorId: currentUser.id,
+      authorName: currentUser.displayName,
+      shareCode,
+      stickers: [
+        // Main cover sticker is automatically added as sticker #1
+        {
+          id: 'stk_main_' + Date.now(),
+          url: finalCoverUrl,
+          title: 'Главный стикер',
+          createdAt: Date.now()
+        }
+      ]
+    };
+    setStickerPacks((prev) => [...prev, newPack]);
+    setActiveStickerPackId(newPack.id);
+    setNewStickerPackName('');
+    setNewStickerPackCover('');
+    setIsCreatePackModalOpen(false);
+    triggerToast(`✨ Пак стикеров «${title}» создан! Добавлено главное изображение.`);
+  };
+
+  // Копирование публичной / приватной ссылки на стикерпак владельца
+  const handleCopyStickerPackLink = (pack: CustomStickerPack) => {
+    const code = pack.shareCode || pack.id.replace(/^pack_/, '');
+    const packUrl = `https://aurachat.app/stickers/${code}`;
+    navigator.clipboard.writeText(packUrl);
+    playReactionSound();
+    triggerToast(`📋 Ссылка на стикерпак «${pack.name}» скопирована!`);
+  };
+
+  // Отправка всего стикерпака в чат, чтобы собеседник мог его открыть и сохранить
+  const handleSendStickerPackIntoChat = (pack: CustomStickerPack) => {
+    if (isBlocked) {
+      triggerToast('Собеседник заблокирован.');
+      return;
+    }
+    playSentSound();
+    const cover = pack.coverUrl || pack.stickers[0]?.url || 'https://api.dicebear.com/7.x/fun-emoji/svg?seed=AuraSticker';
+    onSendMessage(
+      'image',
+      `Пак стикеров «${pack.name}» (${pack.stickers.length} шт.)`,
+      cover,
+      {
+        isSticker: true,
+        stickerPackName: pack.name,
+        stickerPackId: pack.id,
+        stickerPackCover: cover,
+        stickerPackItems: pack.stickers.slice(0, 70).map((s) => ({ id: s.id, url: s.url, title: s.title })),
+        mediaUrl: cover,
+        topicId: activeTopicId || undefined
+      }
+    );
+    setShowEmojiPicker(false);
+    triggerToast(`🚀 Пак «${pack.name}» отправлен в чат!`);
+  };
+
+  // Установка стикерпака к себе в подборку
+  const handleSaveStickerPackToCollection = (packToSave: CustomStickerPack) => {
+    playSentSound();
+    setStickerPacks((prev) => {
+      const exists = prev.some((p) => p.id === packToSave.id || (p.name.toLowerCase() === packToSave.name.toLowerCase() && p.stickers.length === packToSave.stickers.length));
+      if (exists) {
+        return prev;
+      }
+      return [...prev, packToSave];
+    });
+    setActiveStickerPackId(packToSave.id);
+    if (viewingPackModal) {
+      setViewingPackModal({ pack: packToSave, isSaved: true });
+    }
+    triggerToast(`✅ Пак «${packToSave.name}» успешно установлен в вашу подборку!`);
+  };
+
+  // Удаление стикерпака из подборки
+  const handleRemoveStickerPackFromCollection = (packToRemove: CustomStickerPack) => {
+    playReactionSound();
+    setStickerPacks((prev) => {
+      const filtered = prev.filter((p) => p.id !== packToRemove.id && p.name.toLowerCase() !== packToRemove.name.toLowerCase());
+      if (filtered.length === 0) {
+        return defaultStickerPacks;
+      }
+      return filtered;
+    });
+    if (activeStickerPackId === packToRemove.id) {
+      setActiveStickerPackId(stickerPacks[0]?.id || 'pack_my_first');
+    }
+    if (viewingPackModal) {
+      setViewingPackModal({ pack: packToRemove, isSaved: false });
+    }
+    triggerToast(`🗑️ Пак «${packToRemove.name}» удалён из вашей подборки`);
+  };
+
+  // Генерация самодельного стикера 320x320 на <canvas> с картинкой и надписью
+  const buildCustomStickerDataUrl = (rawImgUrl: string, textOverlay: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const size = 320;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(rawImgUrl);
+            return;
+          }
+
+          ctx.clearRect(0, 0, size, size);
+
+          // Fit image nicely with padding for sticker outline
+          const pad = 16;
+          const maxW = size - pad * 2;
+          const maxH = size - pad * 2;
+          const scale = Math.min(maxW / img.width, maxH / img.height);
+          const drawW = img.width * scale;
+          const drawH = img.height * scale;
+          const dx = (size - drawW) / 2;
+          const dy = (size - drawH) / 2;
+
+          ctx.save();
+          // Rounded sticker clip
+          const radius = 36;
+          ctx.beginPath();
+          ctx.moveTo(dx + radius, dy);
+          ctx.lineTo(dx + drawW - radius, dy);
+          ctx.quadraticCurveTo(dx + drawW, dy, dx + drawW, dy + radius);
+          ctx.lineTo(dx + drawW, dy + drawH - radius);
+          ctx.quadraticCurveTo(dx + drawW, dy + drawH, dx + drawW - radius, dy + drawH);
+          ctx.lineTo(dx + radius, dy + drawH);
+          ctx.quadraticCurveTo(dx, dy + drawH, dx, dy + drawH - radius);
+          ctx.lineTo(dx, dy + radius);
+          ctx.quadraticCurveTo(dx, dy, dx + radius, dy);
+          ctx.closePath();
+
+          // White sticker border
+          ctx.lineWidth = 8;
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+          ctx.clip();
+          ctx.drawImage(img, dx, dy, drawW, drawH);
+          ctx.restore();
+
+          // Draw caption text on sticker if provided
+          const cleanText = textOverlay.trim();
+          if (cleanText) {
+            ctx.save();
+            ctx.font = '900 28px system-ui, -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = 7;
+            ctx.strokeStyle = '#000000';
+            ctx.fillStyle = '#ffffff';
+            const textY = size - 18;
+            ctx.strokeText(cleanText, size / 2, textY, size - 24);
+            ctx.fillText(cleanText, size / 2, textY, size - 24);
+            ctx.restore();
+          }
+
+          resolve(canvas.toDataURL('image/png'));
+        } catch {
+          resolve(rawImgUrl);
+        }
+      };
+      img.onerror = () => resolve(rawImgUrl);
+      img.src = rawImgUrl;
+    });
+  };
+
+  const handleSaveCustomSticker = async () => {
+    if (!newStickerRawImage) return;
+    const targetPack = stickerPacks.find((p) => p.id === activeStickerPackId);
+    if (targetPack && targetPack.stickers.length >= 70) {
+      triggerToast('⚠️ В одном стикерпаке может быть максимум 70 стикеров!');
+      return;
+    }
+    playSentSound();
+    const finalStickerUrl = await buildCustomStickerDataUrl(newStickerRawImage, newStickerCaption);
+    const newSticker: CustomStickerItem = {
+      id: 'stk_' + Date.now(),
+      url: finalStickerUrl,
+      title: newStickerCaption.trim() || 'Стикер',
+      createdAt: Date.now()
+    };
+
+    setStickerPacks((prev) =>
+      prev.map((p) =>
+        p.id === activeStickerPackId
+          ? { ...p, stickers: [newSticker, ...p.stickers].slice(0, 70) }
+          : p
+      )
+    );
+    setNewStickerRawImage('');
+    setNewStickerCaption('');
+    setIsAddStickerModalOpen(false);
+    triggerToast('🎨 Стикер добавлен в пак (макс. 70 шт.)!');
+  };
+
+  const handleSendSticker = (sticker: CustomStickerItem, packName?: string) => {
+    if (isBlocked) {
+      triggerToast('Собеседник заблокирован.');
+      return;
+    }
+    playSentSound();
+    const activePackObj = stickerPacks.find((p) => p.name === packName || p.id === activeStickerPackId);
+    onSendMessage(
+      'image',
+      sticker.title ? `Стикер: ${sticker.title}` : 'Стикер',
+      sticker.url,
+      {
+        isSticker: true,
+        stickerTitle: sticker.title,
+        stickerPackName: packName || 'Мои стикеры',
+        stickerPackId: activePackObj?.id,
+        stickerPackCover: activePackObj?.coverUrl || sticker.url,
+        stickerPackItems: activePackObj?.stickers?.slice(0, 70).map((s) => ({ id: s.id, url: s.url, title: s.title })),
+        mediaUrl: sticker.url,
+        topicId: activeTopicId || undefined
+      }
+    );
+    setShowEmojiPicker(false);
+  };
+
+  const handleConfirmSendPendingMedia = () => {
+    if (!pendingMediaAttachment) return;
+    playSentSound();
+    const captionText = pendingMediaCaption.trim();
+    const fallbackLabel = pendingMediaAttachment.isVideo ? 'Видеозапись' : 'Фотография';
+
+    onSendMessage(
+      'image',
+      captionText || fallbackLabel,
+      pendingMediaAttachment.url,
+      {
+        topicId: activeTopicId || undefined,
+        isVideo: pendingMediaAttachment.isVideo,
+        caption: captionText || undefined
+      }
+    );
+
+    if (chat.id === 'chat_gif_hub' && onAddCommunityGif && !pendingMediaAttachment.isVideo) {
+      onAddCommunityGif({
+        id: 'cgif_' + Date.now(),
+        title: captionText || ('Реакция от @' + currentUser.username),
+        url: pendingMediaAttachment.url,
+        authorId: currentUser.id,
+        authorName: currentUser.displayName,
+        authorUsername: currentUser.username,
+        authorAvatar: currentUser.avatarUrl,
+        createdAt: 'Только что',
+        usesCount: 1
+      });
+    }
+
+    setPendingMediaAttachment(null);
+    setPendingMediaCaption('');
   };
 
   const handleToggleVoice = (msgId: string, durationSec: number = 8, mediaUrl?: string) => {
@@ -489,7 +887,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       title: data.title,
       artist: data.artist,
       trimmedStartSec: data.trimmedStartSec,
-      trimmedLengthSec: data.trimmedLengthSec
+      trimmedLengthSec: data.trimmedLengthSec,
+      topicId: activeTopicId || undefined
     });
     setPendingAudioFile(null);
   };
@@ -504,11 +903,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const displayMessages = React.useMemo(() => {
     const seenIds = new Set<string>();
+    const defaultTopicId = chat.topics?.[0]?.id;
+    const isMainOrAllTopic =
+      !activeTopicId ||
+      activeTopicId === 'top_all' ||
+      activeTopicId === 'top_main' ||
+      activeTopicId === defaultTopicId;
+
     return messages.filter((m) => {
       if (!m || !m.id) return false;
       if (seenIds.has(m.id)) return false;
       seenIds.add(m.id);
-      if (chat.topics && activeTopicId && activeTopicId !== 'top_all') {
+      if (chat.topics && chat.topics.length > 0 && activeTopicId) {
+        if (isMainOrAllTopic) {
+          return !m.topicId || m.topicId === activeTopicId || m.topicId === 'top_main' || m.topicId === 'top_all';
+        }
         return m.topicId === activeTopicId;
       }
       return true;
@@ -685,17 +1094,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          {chat.requiresApproval && chat.joinRequests && chat.joinRequests.length > 0 && isOwnerOrAdmin && (
-            <button
-              onClick={() => setIsJoinRequestsOpen(true)}
-              className="px-2 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-amber-300 text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer shrink-0"
-              title="Ожидают одобрения заявки на вступление"
-            >
-              <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>{chat.joinRequests.length}</span>
-            </button>
-          )}
-
           {isGroupOrChannel && (
             <button
               onClick={() => setShowGroupInfoModal(true)}
@@ -832,6 +1230,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   </>
                 ) : chat.type === 'direct' ? (
                   <>
+                    {/* 0. Добавить человека / Ссылка / QR-код */}
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setIsInviteAndQROpen(true);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl hover:bg-[#0077FF]/15 text-[#71aaeb] flex items-center gap-2.5 transition text-left cursor-pointer"
+                    >
+                      <UserPlus className="w-4 h-4 shrink-0 text-[#0077FF]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-white">Добавить человека</div>
+                        <div className="text-[10px] text-[#71aaeb]">
+                          По контакту, ссылке или QR-коду
+                        </div>
+                      </div>
+                    </button>
+
+                    <div className="my-1 border-t border-[#2e2e32]" />
+
                     {/* 1. Заблокировать / Разблокировать */}
                     <button
                       onClick={handleToggleBlock}
@@ -960,6 +1377,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 ) : (
                   <>
                     {/* Groups and Channels */}
+                    {/* 0. Добавить человека (или ссылка / QR-код) */}
+                    <button
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setIsInviteAndQROpen(true);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-[#0077FF]/15 hover:bg-[#0077FF]/25 text-white flex items-center gap-2.5 transition text-left cursor-pointer mb-1 border border-[#0077FF]/30"
+                    >
+                      <UserPlus className="w-4 h-4 shrink-0 text-[#71aaeb]" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white">Добавить человека</div>
+                        <div className="text-[10px] text-[#71aaeb]">
+                          {chat.isPublic === false || chat.requiresApproval
+                            ? 'Добавить, дать приватную ссылку или QR-код'
+                            : 'Добавить участника, дать ссылку или QR-код'}
+                        </div>
+                      </div>
+                    </button>
+
                     {/* 1. Покинуть чат / канал */}
                     <button
                       onClick={() => {
@@ -1540,27 +1976,98 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     );
                   })()}
 
-                  {/* PHOTO / ATTACHMENT */}
+                  {/* PHOTO / VIDEO / CUSTOM STICKER ATTACHMENT */}
                   {msg.type === 'image' && msg.mediaUrl && (
-                    <div className="py-1 relative group/img">
-                      <img
-                        src={msg.mediaUrl}
-                        alt="Вложение"
-                        onClick={() => setLightboxImage(msg.mediaUrl!)}
-                        className="max-h-60 rounded-xl object-cover cursor-pointer hover:opacity-95 transition"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          downloadMediaFile(msg.mediaUrl!, `vk_photo_${msg.id}`, 'image');
-                        }}
-                        className="mt-1.5 px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition"
-                        title="Скачать фото"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span>Скачать фото</span>
-                      </button>
-                    </div>
+                    msg.mediaMeta?.isSticker ? (
+                      <div className="py-1 flex flex-col items-center">
+                        <img
+                          src={msg.mediaUrl}
+                          alt={msg.content || 'Стикер'}
+                          onClick={() => {
+                            if (msg.mediaMeta?.stickerPackName) {
+                              const found = stickerPacks.find((p) => p.name === msg.mediaMeta?.stickerPackName || p.id === msg.mediaMeta?.stickerPackId);
+                              const packObj: CustomStickerPack = found || {
+                                id: msg.mediaMeta.stickerPackId || 'pack_shared_' + msg.id,
+                                name: msg.mediaMeta.stickerPackName,
+                                coverUrl: msg.mediaMeta.stickerPackCover || msg.mediaUrl,
+                                stickers: msg.mediaMeta.stickerPackItems?.length
+                                  ? msg.mediaMeta.stickerPackItems.map((s) => ({ id: s.id, url: s.url, title: s.title, createdAt: Date.now() }))
+                                  : [{ id: 'stk_' + msg.id, url: msg.mediaUrl!, title: msg.content || 'Стикер', createdAt: Date.now() }]
+                              };
+                              const isSaved = stickerPacks.some((p) => p.name.toLowerCase() === packObj.name.toLowerCase());
+                              setViewingPackModal({ pack: packObj, isSaved });
+                            } else {
+                              setLightboxImage(msg.mediaUrl!);
+                            }
+                          }}
+                          className="w-36 h-36 sm:w-40 sm:h-40 object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.45)] cursor-pointer hover:scale-105 transition-transform"
+                          title="Нажмите, чтобы открыть пак стикеров и сохранить себе"
+                        />
+                        {msg.mediaMeta?.stickerPackName && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const found = stickerPacks.find((p) => p.name === msg.mediaMeta?.stickerPackName || p.id === msg.mediaMeta?.stickerPackId);
+                              const packObj: CustomStickerPack = found || {
+                                id: msg.mediaMeta?.stickerPackId || 'pack_shared_' + msg.id,
+                                name: msg.mediaMeta!.stickerPackName!,
+                                coverUrl: msg.mediaMeta?.stickerPackCover || msg.mediaUrl,
+                                stickers: msg.mediaMeta?.stickerPackItems?.length
+                                  ? msg.mediaMeta.stickerPackItems.map((s) => ({ id: s.id, url: s.url, title: s.title, createdAt: Date.now() }))
+                                  : [{ id: 'stk_' + msg.id, url: msg.mediaUrl!, title: msg.content || 'Стикер', createdAt: Date.now() }]
+                              };
+                              const isSaved = stickerPacks.some((p) => p.name.toLowerCase() === packObj.name.toLowerCase());
+                              setViewingPackModal({ pack: packObj, isSaved });
+                            }}
+                            className="mt-1 px-2.5 py-1 rounded-full bg-[#0077FF]/20 hover:bg-[#0077FF]/35 text-[#71aaeb] hover:text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition border border-[#0077FF]/30"
+                            title="Открыть пак и сохранить в свою подборку"
+                          >
+                            <Sparkles className="w-3 h-3 text-[#71aaeb]" />
+                            <span>Пак «{msg.mediaMeta.stickerPackName}» · Открыть</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="py-1 relative group/img space-y-1.5">
+                        {msg.mediaUrl.startsWith('data:video/') || /\.(mp4|webm|mov|ogg)($|\?)/i.test(msg.mediaUrl) || msg.mediaMeta?.isVideo ? (
+                          <video
+                            src={msg.mediaUrl}
+                            controls
+                            playsInline
+                            className="max-h-64 rounded-xl bg-black object-contain w-full"
+                          />
+                        ) : (
+                          <img
+                            src={msg.mediaUrl}
+                            alt="Вложение"
+                            onClick={() => setLightboxImage(msg.mediaUrl!)}
+                            className="max-h-64 rounded-xl object-cover cursor-pointer hover:opacity-95 transition"
+                          />
+                        )}
+
+                        {/* Подпись (надпись) к картинке или видео */}
+                        {msg.content &&
+                          msg.content !== 'Фотография' &&
+                          msg.content !== 'Видеозапись' && (
+                            <p className="text-xs sm:text-[13px] text-white whitespace-pre-wrap break-words leading-relaxed pt-0.5">
+                              {msg.content}
+                            </p>
+                          )}
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const isVid = msg.mediaUrl!.startsWith('data:video/') || /\.(mp4|webm|mov|ogg)($|\?)/i.test(msg.mediaUrl!) || msg.mediaMeta?.isVideo;
+                            downloadMediaFile(msg.mediaUrl!, `aurachat_media_${msg.id}`, isVid ? 'video' : 'image');
+                          }}
+                          className="mt-1 px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition w-fit"
+                          title="Скачать медиафайл"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>Скачать</span>
+                        </button>
+                      </div>
+                    )
                   )}
 
                   {/* AUDIO / MUSIC ATTACHMENT */}
@@ -1687,32 +2194,211 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           )}
 
           <div className="w-full min-w-0 max-w-full px-2 sm:px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] bg-[#222222] border-t border-[#2e2e2e] flex items-center gap-1 sm:gap-1.5 shrink-0 relative overflow-visible">
-          {/* Floating Emoji Picker Popover */}
-          {showEmojiPicker && (
-            <div className="absolute bottom-14 left-2 bg-[#222222] border border-[#2e2e2e] rounded-2xl p-2.5 shadow-2xl z-30 flex flex-wrap gap-1 w-56">
-              {quickEmojis.map((em) => (
-                <button
-                  key={em}
-                  onClick={() => {
-                    setInputText((prev) => prev + em);
-                    setShowEmojiPicker(false);
-                  }}
-                  className="text-lg sm:text-xl p-1.5 rounded-xl hover:bg-[#2c2d2e] transition cursor-pointer"
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Floating Emoji & Custom Stickers Picker Popover */}
+          {showEmojiPicker && (() => {
+            const activePack = stickerPacks.find((p) => p.id === activeStickerPackId) || stickerPacks[0];
+            return (
+              <div className="absolute bottom-14 right-2 sm:right-6 bg-[#1c1c20] border border-[#333338] rounded-2xl p-3 shadow-2xl z-40 w-72 sm:w-80 space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
+                {/* Top Mode Switcher: Стикеры | Эмодзи */}
+                <div className="flex items-center justify-between gap-1 bg-[#141416] p-1 rounded-xl border border-[#2a2a2e]">
+                  <button
+                    type="button"
+                    onClick={() => setPickerTab('stickers')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      pickerTab === 'stickers'
+                        ? 'bg-[#0077FF] text-white shadow'
+                        : 'text-[#939393] hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Стикеры</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPickerTab('emojis')}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      pickerTab === 'emojis'
+                        ? 'bg-[#0077FF] text-white shadow'
+                        : 'text-[#939393] hover:text-white'
+                    }`}
+                  >
+                    <Smile className="w-3.5 h-3.5" />
+                    <span>Эмодзи</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(false)}
+                    className="p-1.5 rounded-lg text-[#828282] hover:text-white cursor-pointer"
+                    title="Закрыть"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {pickerTab === 'emojis' ? (
+                  <div className="grid grid-cols-6 gap-1 pt-0.5">
+                    {quickEmojis.map((em) => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => {
+                          setInputText((prev) => prev + em);
+                          setShowEmojiPicker(false);
+                        }}
+                        className="text-lg sm:text-xl p-1.5 rounded-xl hover:bg-[#2c2d2e] transition cursor-pointer flex items-center justify-center"
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {/* Sticker Packs Tabs + "+ Пак" button */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-[#2c2d2e]">
+                      {stickerPacks.map((pack) => (
+                        <button
+                          key={pack.id}
+                          type="button"
+                          onClick={() => setActiveStickerPackId(pack.id)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold shrink-0 transition cursor-pointer ${
+                            activePack?.id === pack.id
+                              ? 'bg-[#2c2d2e] text-[#71aaeb] border border-[#0077FF]/50'
+                              : 'text-[#939393] hover:text-white hover:bg-[#252528]'
+                          }`}
+                        >
+                          {pack.name} ({pack.stickers.length})
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatePackModalOpen(true)}
+                        className="px-2 py-1 rounded-lg bg-[#0077FF]/20 hover:bg-[#0077FF]/30 text-[#71aaeb] border border-[#0077FF]/40 text-[11px] font-bold shrink-0 flex items-center gap-1 cursor-pointer transition"
+                        title="Создать новый пак самодельных стикеров"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Пак</span>
+                      </button>
+                    </div>
+
+                    {/* Active Pack Action Bar: Copy Link, Send Pack into Chat, and Max 70 indicator */}
+                    {activePack && (
+                      <div className="flex items-center justify-between gap-1.5 px-1 py-1 rounded-xl bg-[#25252a] border border-[#333338] text-[10px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {activePack.coverUrl && (
+                            <img
+                              src={activePack.coverUrl}
+                              alt={activePack.name}
+                              className="w-5 h-5 rounded-md object-contain shrink-0 bg-black/40"
+                            />
+                          )}
+                          <div className="truncate text-white font-bold">
+                            {activePack.name}
+                            <span className="text-[#939393] font-normal ml-1">
+                              ({activePack.stickers.length}/70)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyStickerPackLink(activePack)}
+                            className="p-1 px-1.5 rounded-lg bg-[#303036] hover:bg-[#3d3d44] text-[#71aaeb] hover:text-white transition flex items-center gap-1 cursor-pointer"
+                            title="Скопировать ссылку на этот стикерпак"
+                          >
+                            <Link2 className="w-3 h-3" />
+                            <span>Ссылка</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSendStickerPackIntoChat(activePack)}
+                            className="p-1 px-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white transition flex items-center gap-1 cursor-pointer font-bold"
+                            title="Отправить весь стикерпак в чат, чтобы собеседник мог его себе сохранить"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>В чат</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStickerPackFromCollection(activePack)}
+                            className="p-1 px-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 hover:text-rose-200 transition flex items-center gap-1 cursor-pointer"
+                            title="Удалить этот пак из подборки"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stickers Grid with "+" Button to Add Custom Sticker */}
+                    <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-0.5 scrollbar-thin">
+                      {/* "+" Tile: Add Custom Sticker to current pack */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewStickerRawImage('');
+                          setNewStickerCaption('');
+                          setIsAddStickerModalOpen(true);
+                        }}
+                        className="aspect-square rounded-xl border-2 border-dashed border-[#0077FF]/60 bg-[#0077FF]/10 hover:bg-[#0077FF]/20 text-[#71aaeb] flex flex-col items-center justify-center gap-1 p-2 transition cursor-pointer group"
+                        title="Добавить свой самодельный стикер в этот пак"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-[#0077FF] text-white flex items-center justify-center shadow group-hover:scale-110 transition-transform">
+                          <Plus className="w-4 h-4" />
+                        </div>
+                        <span className="text-[10px] font-bold text-center leading-tight">
+                          + Стикер
+                        </span>
+                      </button>
+
+                      {activePack?.stickers.map((stk) => (
+                        <div
+                          key={stk.id}
+                          className="relative aspect-square rounded-xl bg-[#252529] hover:bg-[#2f2f35] border border-[#333338] p-1.5 flex flex-col items-center justify-center cursor-pointer group transition"
+                          onClick={() => handleSendSticker(stk, activePack.name)}
+                          title={stk.title ? `Отправить стикер «${stk.title}»` : 'Отправить стикер'}
+                        >
+                          <img
+                            src={stk.url}
+                            alt={stk.title || 'Стикер'}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStickerPacks((prev) =>
+                                prev.map((p) =>
+                                  p.id === activePack.id
+                                    ? { ...p, stickers: p.stickers.filter((s) => s.id !== stk.id) }
+                                    : p
+                                )
+                              );
+                            }}
+                            className="absolute top-1 right-1 p-0.5 rounded-full bg-black/75 text-rose-400 opacity-0 group-hover:opacity-100 hover:bg-rose-600 hover:text-white transition cursor-pointer"
+                            title="Удалить стикер"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <label
             className="p-1.5 text-[#828282] hover:text-white hover:bg-[#2c2d2e] rounded-lg transition cursor-pointer shrink-0"
-            title="Прикрепить фото или файл"
+            title="Прикрепить картинку и надпись перед отправкой (или видео/аудио)"
           >
             <Paperclip className="w-4 h-4" />
             <input
               type="file"
-              accept="image/*,audio/*"
+              accept="image/*,video/*,audio/*"
               className="hidden"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -1720,23 +2406,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   if (f.type.startsWith('audio/')) {
                     handleAudioFileSelected(f);
                   } else {
+                    const isVideoFile = f.type.startsWith('video/');
                     const { url } = await fileToPersistentUrl(f);
-                    playSentSound();
-                    onSendMessage('image', 'Фотография', url);
-
-                    if (chat.id === 'chat_gif_hub' && onAddCommunityGif) {
-                      onAddCommunityGif({
-                        id: 'cgif_' + Date.now(),
-                        title: 'Реакция от @' + currentUser.username,
-                        url: url,
-                        authorId: currentUser.id,
-                        authorName: currentUser.displayName,
-                        authorUsername: currentUser.username,
-                        authorAvatar: currentUser.avatarUrl,
-                        createdAt: 'Только что',
-                        usesCount: 1
-                      });
-                    }
+                    playReactionSound();
+                    // Сначала показываем картинку и поле для надписи, и только потом отправляем!
+                    setPendingMediaAttachment({
+                      url,
+                      isVideo: isVideoFile,
+                      fileName: f.name
+                    });
+                    setPendingMediaCaption(inputText);
                   }
                   e.target.value = '';
                 }
@@ -1766,7 +2445,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
           <input
             type="text"
-            placeholder="Напишите сообщение..."
+            placeholder={
+              chat.type === 'channel'
+                ? '📢 Опубликовать запись в канале...'
+                : chat.type === 'group'
+                ? 'Написать сообщение в группу...'
+                : 'Напишите сообщение...'
+            }
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -1841,7 +2526,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           onSendMessage('voice', 'Голосовое сообщение', audioUrl, {
             durationSec,
             waveform,
-            mediaUrl: audioUrl
+            mediaUrl: audioUrl,
+            topicId: activeTopicId || undefined
           });
         }}
       />
@@ -1868,28 +2554,481 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         }}
       />
 
-      {/* 5.1. INVITE LINK & QR CODE MODAL */}
+      {/* 5.1. INVITE LINK, QR CODE & ADD PERSON MODAL */}
       <InviteAndQRModal
         isOpen={isInviteAndQROpen}
         chat={chat}
+        allUsers={savedAccounts}
+        currentUserId={currentUser.id}
         onClose={() => setIsInviteAndQROpen(false)}
-        onRequestJoin={(chatId, guestUser) => {
-          if (onRequestJoin) onRequestJoin(chatId, guestUser);
+        onAddMemberToChat={(chatId, targetUser) => {
+          const currentMembers = chat.members || [];
+          const alreadyExists = currentMembers.some(
+            (m) =>
+              m.userId === targetUser.id ||
+              (m.username && targetUser.username && m.username.toLowerCase() === targetUser.username.toLowerCase())
+          );
+          if (!alreadyExists) {
+            const nextMembers = [
+              ...currentMembers,
+              {
+                userId: targetUser.id,
+                displayName: targetUser.displayName,
+                username: targetUser.username,
+                avatarUrl: targetUser.avatarUrl,
+                role: 'member' as const,
+                joinedAt: 'Только что'
+              }
+            ];
+            onUpdateChat?.({
+              ...chat,
+              members: nextMembers,
+              membersCount: Math.max((chat.membersCount || 1) + 1, nextMembers.length)
+            });
+          }
+          triggerToast(`✅ Пользователь ${targetUser.displayName} добавлен!`);
         }}
       />
 
-      {/* 5.2. JOIN REQUESTS MANAGEMENT MODAL (FOR OWNER/ADMIN) */}
-      <JoinRequestsModal
-        isOpen={isJoinRequestsOpen}
-        chat={chat}
-        onClose={() => setIsJoinRequestsOpen(false)}
-        onApproveRequest={(chatId, req) => {
-          if (onApproveRequest) onApproveRequest(chatId, req);
-        }}
-        onDeclineRequest={(chatId, reqId) => {
-          if (onDeclineRequest) onDeclineRequest(chatId, reqId);
-        }}
-      />
+      {/* 5.1b. PRE-SEND IMAGE / VIDEO + CAPTION MODAL ("КАРТИНКА И НАДПИСЬ ПЕРЕД ОТПРАВКОЙ") */}
+      {pendingMediaAttachment && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => {
+            setPendingMediaAttachment(null);
+            setPendingMediaCaption('');
+          }}
+        >
+          <div
+            className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-[#0077FF]/20 text-[#71aaeb]">
+                  <ImageIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {chat.type === 'channel' ? 'Публикация в канал' : 'Отправка медиафайла'}
+                  </h3>
+                  <p className="text-[11px] text-[#939393]">
+                    Проверьте картинку и добавьте надпись перед отправкой
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingMediaAttachment(null);
+                  setPendingMediaCaption('');
+                }}
+                className="p-1.5 rounded-xl bg-[#2c2d2e] text-[#939393] hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Image / Video Preview */}
+            <div className="rounded-2xl overflow-hidden bg-[#121214] border border-[#2e2e32] flex items-center justify-center max-h-72 relative">
+              {pendingMediaAttachment.isVideo ? (
+                <video
+                  src={pendingMediaAttachment.url}
+                  controls
+                  playsInline
+                  className="max-h-72 w-full object-contain"
+                />
+              ) : (
+                <img
+                  src={pendingMediaAttachment.url}
+                  alt="Предпросмотр"
+                  className="max-h-72 w-full object-contain"
+                />
+              )}
+              <label
+                className="absolute bottom-2.5 right-2.5 px-2.5 py-1.5 rounded-xl bg-black/75 hover:bg-[#0077FF] text-white text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer border border-white/15 transition"
+                title="Заменить картинку"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Заменить</span>
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      const isVid = f.type.startsWith('video/');
+                      const { url } = await fileToPersistentUrl(f);
+                      setPendingMediaAttachment({ url, isVideo: isVid, fileName: f.name });
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Caption Input ("Надпись") */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-[#939393] block">
+                Надпись к картинке:
+              </label>
+              <textarea
+                autoFocus
+                rows={2}
+                value={pendingMediaCaption}
+                onChange={(e) => setPendingMediaCaption(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleConfirmSendPendingMedia();
+                  }
+                }}
+                placeholder="Добавьте надпись к картинке..."
+                className="w-full bg-[#252529] border border-[#34343a] focus:border-[#0077FF] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-white outline-none placeholder-[#828282] resize-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingMediaAttachment(null);
+                  setPendingMediaCaption('');
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs font-bold cursor-pointer transition"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSendPendingMedia}
+                className="flex-1 py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer transition"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{chat.type === 'channel' ? 'Опубликовать' : 'Отправить'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5.1c. CREATE CUSTOM STICKER PACK MODAL ("+ ПАК СТИКЕРОВ") */}
+      {isCreatePackModalOpen && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setIsCreatePackModalOpen(false)}
+        >
+          <div
+            className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-4 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-[#71aaeb]" />
+                <span>Новый пак стикеров</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsCreatePackModalOpen(false)}
+                className="p-1 rounded-lg text-[#939393] hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-[#939393] block mb-1">
+                  1. Название пака:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={newStickerPackName}
+                  onChange={(e) => setNewStickerPackName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleCreateStickerPack()}
+                  placeholder="Например: Любимые мемы, Котята..."
+                  className="w-full bg-[#252529] border border-[#34343a] focus:border-[#0077FF] rounded-xl px-3.5 py-2.5 text-xs text-white outline-none placeholder-[#828282]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-[#939393] block mb-1">
+                  2. Главный стикер (обложка пака):
+                </label>
+                {newStickerPackCover ? (
+                  <div className="relative w-28 h-28 mx-auto rounded-2xl bg-[#141416] border border-[#0077FF]/50 p-2 flex items-center justify-center">
+                    <img
+                      src={newStickerPackCover}
+                      alt="Обложка"
+                      className="w-full h-full object-contain rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewStickerPackCover('')}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/80 text-white hover:bg-rose-600 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="w-full h-24 rounded-2xl border-2 border-dashed border-[#0077FF]/50 bg-[#0077FF]/10 hover:bg-[#0077FF]/15 flex flex-col items-center justify-center gap-1 cursor-pointer transition p-2 text-center">
+                    <div className="w-7 h-7 rounded-full bg-[#0077FF] text-white flex items-center justify-center shadow">
+                      <Plus className="w-4 h-4" />
+                    </div>
+                    <span className="text-[11px] font-bold text-white">Выбрать главный стикер</span>
+                    <span className="text-[9px] text-[#939393]">Картинка станет аватаркой и стикером #1</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          const { url } = await fileToPersistentUrl(f);
+                          setNewStickerPackCover(url);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-[#25252a] text-[10px] text-[#71aaeb] leading-relaxed border border-[#303036]">
+                ℹ️ В созданный пак можно добавить до 70 самодельных стикеров. Вы сможете отправить пак в чат или поделиться ссылкой!
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatePackModalOpen(false);
+                  setNewStickerPackCover('');
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#2c2d2e] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={!newStickerPackName.trim()}
+                onClick={handleCreateStickerPack}
+                className="flex-1 py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-xs font-bold text-white cursor-pointer shadow-lg"
+              >
+                Создать пак (до 70 шт.)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5.1d. ADD CUSTOM STICKER MODAL ("+ ДОБАВИТЬ САМОДЕЛЬНЫЙ СТИКЕР") */}
+      {isAddStickerModalOpen && (
+        <div
+          className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setIsAddStickerModalOpen(false)}
+        >
+          <div
+            className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-4 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#71aaeb]" />
+                <span>Создать самодельный стикер</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsAddStickerModalOpen(false)}
+                className="p-1 rounded-lg text-[#939393] hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {newStickerRawImage ? (
+              <div className="relative w-44 h-44 mx-auto rounded-2xl bg-[#141416] border border-[#2e2e32] flex items-center justify-center p-2 overflow-hidden">
+                <img
+                  src={newStickerRawImage}
+                  alt="Стикер"
+                  className="w-full h-full object-contain rounded-xl"
+                />
+                {newStickerCaption.trim() && (
+                  <div className="absolute bottom-2.5 inset-x-2 text-center font-black text-white text-sm drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] truncate">
+                    {newStickerCaption}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setNewStickerRawImage('')}
+                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/75 text-white hover:bg-rose-600 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="w-full h-40 rounded-2xl border-2 border-dashed border-[#0077FF]/50 bg-[#0077FF]/10 hover:bg-[#0077FF]/15 flex flex-col items-center justify-center gap-2 cursor-pointer transition p-4 text-center">
+                <div className="w-10 h-10 rounded-full bg-[#0077FF] text-white flex items-center justify-center shadow">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div className="text-xs font-bold text-white">Загрузить картинку для стикера</div>
+                <div className="text-[10px] text-[#939393]">PNG, JPG, WEBP или GIF с устройства</div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      const { url } = await fileToPersistentUrl(f);
+                      setNewStickerRawImage(url);
+                      e.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-[#939393] block">
+                Надпись на стикере (необязательно):
+              </label>
+              <input
+                type="text"
+                value={newStickerCaption}
+                onChange={(e) => setNewStickerCaption(e.target.value)}
+                placeholder="Например: ТОП, ПРИВЕТ, ОГОНЬ..."
+                className="w-full bg-[#252529] border border-[#34343a] focus:border-[#0077FF] rounded-xl px-3.5 py-2 text-xs text-white outline-none placeholder-[#828282]"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddStickerModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-[#2c2d2e] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={!newStickerRawImage}
+                onClick={handleSaveCustomSticker}
+                className="flex-1 py-2.5 rounded-xl bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-xs font-bold text-white cursor-pointer shadow-lg"
+              >
+                Добавить в пак
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5.1e. VIEW & SAVE STICKER PACK MODAL (ОТКРЫТЬ И СОХРАНИТЬ ПАК СТИКЕРОВ) */}
+      {viewingPackModal && (
+        <div
+          className="fixed inset-0 z-[96] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setViewingPackModal(null)}
+        >
+          <div
+            className="bg-[#1c1c20] border border-[#333338] rounded-3xl p-5 w-full max-w-md shadow-2xl space-y-4 text-white max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#2e2e34] shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {viewingPackModal.pack.coverUrl && (
+                  <img
+                    src={viewingPackModal.pack.coverUrl}
+                    alt={viewingPackModal.pack.name}
+                    className="w-10 h-10 rounded-xl object-contain bg-[#121214] border border-[#0077FF]/40 p-1 shrink-0"
+                  />
+                )}
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-white truncate">
+                    {viewingPackModal.pack.name}
+                  </h3>
+                  <p className="text-[11px] text-[#71aaeb]">
+                    {viewingPackModal.pack.stickers.length} стикеров (макс. 70)
+                    {viewingPackModal.pack.authorName ? ` · Автор: ${viewingPackModal.pack.authorName}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingPackModal(null)}
+                className="p-1.5 rounded-xl bg-[#25252a] text-[#939393] hover:text-white cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Stickers Grid */}
+            <div className="flex-1 overflow-y-auto pr-1 scrollbar-thin grid grid-cols-3 sm:grid-cols-4 gap-2 min-h-36">
+              {viewingPackModal.pack.stickers.map((stk) => (
+                <div
+                  key={stk.id}
+                  onClick={() => {
+                    handleSendSticker(stk, viewingPackModal.pack.name);
+                    setViewingPackModal(null);
+                  }}
+                  className="aspect-square rounded-xl bg-[#252529] hover:bg-[#2e2e34] border border-[#333338] hover:border-[#0077FF] p-1.5 flex flex-col items-center justify-center cursor-pointer transition group"
+                  title={stk.title ? `Отправить стикер «${stk.title}»` : 'Нажмите, чтобы отправить этот стикер'}
+                >
+                  <img
+                    src={stk.url}
+                    alt={stk.title || 'Стикер'}
+                    className="w-full h-full object-contain group-hover:scale-110 transition-transform"
+                  />
+                  {stk.title && (
+                    <span className="text-[9px] text-[#939393] truncate w-full text-center mt-0.5">
+                      {stk.title}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Bottom Actions: Share Link & Install / Remove Pack Buttons */}
+            <div className="pt-2 border-t border-[#2e2e34] flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleCopyStickerPackLink(viewingPackModal.pack)}
+                className="py-2.5 px-3 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#71aaeb] hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0"
+                title="Поделиться ссылкой на этот стикерпак"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Ссылка</span>
+              </button>
+
+              {viewingPackModal.isSaved ? (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveStickerPackFromCollection(viewingPackModal.pack)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40"
+                  title="Нажмите, чтобы удалить этот пак из своей подборки"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Удалить из подборки</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSaveStickerPackToCollection(viewingPackModal.pack)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-lg bg-[#0077FF] hover:bg-[#0066DD] text-white"
+                  title="Установить этот пак стикеров себе"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Установить</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5.3. UNIFIED CHAT INFO & PROFILE MODAL (MATCHING USER SKETCH FOR DM, GROUP, CHANNEL) */}
       <ChatInfoModal

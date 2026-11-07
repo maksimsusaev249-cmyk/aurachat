@@ -129,6 +129,7 @@ export interface Chat {
   description?: string;
   avatarUrl: string;
   isPrivate: boolean;
+  isPublic?: boolean;
   inviteCode?: string;
   membersCount: number;
   topics?: ChatTopic[];
@@ -147,6 +148,7 @@ export interface Chat {
   parentChatId?: string;
   linkedSecretChatId?: string;
   linkedSecretPin?: string;
+  updatedAt?: number;
 }
 
 export type MessageType = 'text' | 'image' | 'voice' | 'video_note' | 'file' | 'audio';
@@ -173,6 +175,13 @@ export interface Message {
     trimmedStartSec?: number;
     trimmedLengthSec?: number;
     mediaUrl?: string;
+    isVideo?: boolean;
+    isSticker?: boolean;
+    stickerPackName?: string;
+    stickerPackId?: string;
+    stickerPackCover?: string;
+    stickerPackItems?: { id: string; url: string; title?: string }[];
+    topicId?: string;
     replyTo?: { id: string; senderName: string; content: string };
   };
   createdAt: string;
@@ -352,6 +361,7 @@ export interface Community {
   events?: CommunityEvent[];
   hideAdmins?: boolean; // Скрыть создателя и модераторов в профиле сообщества
   joinRequests?: JoinRequest[]; // Заявки на вступление в закрытое сообщество
+  updatedAt?: number; // Метка последнего изменения для синхронизации между устройствами
 }
 
 

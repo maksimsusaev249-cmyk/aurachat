@@ -20,7 +20,8 @@ import {
 import { playSentSound, playReactionSound } from '../../utils/audioUtils';
 import { 
   sendPhoneVerificationCode, 
-  verifyPhoneCodeAndSignIn
+  verifyPhoneCodeAndSignIn,
+  fetchUsersFromSharedServer
 } from '../../firebase';
 
 interface AuthModalProps {
@@ -28,6 +29,7 @@ interface AuthModalProps {
   isLoggedIn?: boolean;
   lastUser?: User | null;
   savedAccounts?: User[];
+  serverUsers?: User[];
   onRemoveSavedAccount?: (userId: string) => void;
   onLogin: (user: User) => void;
   onRegister: (newUser: User) => void;
@@ -51,6 +53,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isLoggedIn = true,
   lastUser,
   savedAccounts = [],
+  serverUsers = [],
   onRemoveSavedAccount,
   onLogin,
   onRegister,
@@ -190,33 +193,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsAuthLoading(false);
 
     const cleanTarget = loginTarget.trim().replace(/^@/, '');
-    const allKnownAccounts = [...savedAccounts];
+    const remoteFetched = await fetchUsersFromSharedServer(cleanTarget).catch(() => []);
+    const allKnownAccounts = [...savedAccounts, ...serverUsers, ...remoteFetched];
     if (lastUser && !allKnownAccounts.some((a) => a.id === lastUser.id)) {
       allKnownAccounts.push(lastUser);
     }
 
-    const existingUser = allKnownAccounts.find(
-      (a) =>
-        (view === 'login_phone' && a.phone === cleanTarget) ||
-        (view === 'login_email' && a.email?.toLowerCase() === cleanTarget.toLowerCase()) ||
-        a.username.toLowerCase() === cleanTarget.toLowerCase()
-    );
+    const cleanDigits = cleanTarget.replace(/\D/g, '');
+    const existingUser = allKnownAccounts.find((a) => {
+      if (!a) return false;
+      if (view === 'login_phone' && a.phone) {
+        const aDigits = a.phone.replace(/\D/g, '');
+        if (a.phone === cleanTarget || (cleanDigits.length >= 6 && aDigits.slice(-10) === cleanDigits.slice(-10))) {
+          return true;
+        }
+      }
+      if (view === 'login_email' && a.email?.toLowerCase() === cleanTarget.toLowerCase()) {
+        return true;
+      }
+      if (a.username && a.username.toLowerCase() === cleanTarget.toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
 
     if (existingUser) {
-      proceedAfterOtpVerified(existingUser);
+      onLogin(existingUser);
     } else {
+      const last4Digits = cleanTarget.replace(/\D/g, '').slice(-4) || String(Math.floor(1000 + Math.random() * 9000));
       // Create or sign in 1 phone/email = 1 account
       const newLoggedUser: User = {
         id: 'u_' + Date.now(),
-        displayName: view === 'login_phone' ? `Абонент ${cleanTarget.slice(-4)}` : cleanTarget.split('@')[0],
-        username: `user_${Math.floor(1000 + Math.random() * 9000)}`,
+        displayName: view === 'login_phone' ? `Абонент ${last4Digits}` : cleanTarget.split('@')[0],
+        username: view === 'login_phone' ? `user_${last4Digits}` : cleanTarget.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanTarget)}&backgroundColor=182533`,
         phone: view === 'login_phone' ? cleanTarget : undefined,
         email: view === 'login_email' ? cleanTarget : undefined,
         bio: 'Пользователь AuraChat',
         hasPin: false
       };
-      proceedAfterOtpVerified(newLoggedUser);
+      onLogin(newLoggedUser);
     }
   };
 
@@ -556,8 +572,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div
                     key={acc.id}
                     onClick={() => {
-                      playReactionSound();
-                      proceedAfterOtpVerified(acc);
+                      playSentSound();
+                      onLogin(acc);
                     }}
                     className="p-3.5 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#2b3c4f] hover:border-[#5288c1] flex items-center justify-between cursor-pointer transition shadow-md group"
                   >

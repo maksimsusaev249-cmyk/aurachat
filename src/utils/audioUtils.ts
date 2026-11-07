@@ -232,19 +232,66 @@ const getDialToneWav = (): string => {
 };
 
 // Trigger native OS / Browser notification (uses device's native notification sound & banner)
-export const triggerDeviceNotification = (title: string, body: string, icon?: string) => {
+export const requestNotificationPermissionIfNeeded = async (): Promise<boolean> => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return false;
+  try {
+    if (Notification.permission === 'default') {
+      const res = await Notification.requestPermission();
+      return res === 'granted';
+    }
+    return Notification.permission === 'granted';
+  } catch {
+    return false;
+  }
+};
+
+export const triggerDeviceNotification = (
+  title: string, 
+  body: string, 
+  icon?: string,
+  options?: { isCall?: boolean; callId?: string; tag?: string }
+) => {
   try {
     const settings = getSoundSettings();
     if (settings.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate([120, 60, 120]);
+      if (options?.isCall) {
+        navigator.vibrate([400, 200, 400]);
+      } else {
+        navigator.vibrate([120, 60, 120]);
+      }
     }
     if (!settings.systemPushEnabled) return;
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
-        new Notification(title, {
+        const notifOptions: any = {
           body,
           icon: icon || '/favicon.ico',
-          silent: false // Explicitly request OS/device notification sound
+          badge: '/favicon.ico',
+          tag: options?.tag || (options?.isCall ? 'aurachat_call' : 'aurachat_msg'),
+          renotify: true,
+          requireInteraction: Boolean(options?.isCall),
+          silent: false
+        };
+
+        // If ServiceWorker registration is available, prefer registration.showNotification for real background & lockscreen alerts
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification(title, notifOptions);
+          }).catch(() => {
+            new Notification(title, notifOptions);
+          });
+        } else {
+          new Notification(title, notifOptions);
+        }
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            new Notification(title, {
+              body,
+              icon: icon || '/favicon.ico',
+              silent: false
+            });
+          }
         });
       }
     }
@@ -379,7 +426,12 @@ export const startIncomingRingtone = (callerName?: string) => {
     const settings = (window as any).__auraSoundSettingsMem || getSoundSettings();
 
     if (callerName) {
-      triggerDeviceNotification('Входящий звонок AuraChat', `${callerName} вызывает вас...`);
+      triggerDeviceNotification(
+        '📞 Входящий звонок AuraChat',
+        `${callerName} вызывает вас...`,
+        undefined,
+        { isCall: true, tag: 'aurachat_incoming_call' }
+      );
     }
 
     if (settings.vibrationEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {

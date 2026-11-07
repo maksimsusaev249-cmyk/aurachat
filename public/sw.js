@@ -1,5 +1,5 @@
-// Lightweight Fast-Install PWA Service Worker (Zero Stale Cache)
-const SW_VERSION = 'aurachat-fast-v3';
+// Lightweight Fast-Install PWA Service Worker (Zero Stale Cache + Background Push & Call Notifications)
+const SW_VERSION = 'aurachat-fast-v4';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -17,4 +17,53 @@ self.addEventListener('fetch', (event) => {
   // Pass-through network fetch to satisfy PWA installability without breaking JS/CSS modules
   if (event.request.method !== 'GET') return;
   event.respondWith(fetch(event.request));
+});
+
+// Background Push Notification handler (works when app is in background or closed)
+self.addEventListener('push', (event) => {
+  try {
+    let data = { title: 'AuraChat', body: 'Новое уведомление', url: '/' };
+    if (event.data) {
+      try {
+        data = event.data.json();
+      } catch {
+        data.body = event.data.text();
+      }
+    }
+    const isCall = data.type === 'call' || data.isCall;
+    const title = data.title || (isCall ? '📞 Входящий звонок AuraChat' : '💬 AuraChat');
+    const options = {
+      body: data.body || 'Новое сообщение',
+      icon: data.icon || '/favicon.ico',
+      badge: '/favicon.ico',
+      vibrate: isCall ? [500, 200, 500, 200, 500] : [200, 100, 200],
+      tag: isCall ? 'aurachat_call' : 'aurachat_msg',
+      renotify: true,
+      requireInteraction: isCall,
+      data: {
+        url: data.url || '/',
+        callId: data.callId
+      }
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (err) {
+    console.error('ServiceWorker push error:', err);
+  }
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
 });

@@ -45,9 +45,11 @@ import { AuthModal } from './components/messenger/AuthModal';
 import { AccountPinPromptModal } from './components/messenger/AccountPinPromptModal';
 import { SettingsTab } from './components/messenger/SettingsModal';
 import { GlobalSearchModal } from './components/messenger/GlobalSearchModal';
+import { InviteAndQRModal } from './components/messenger/InviteAndQRModal';
 import { playReactionSound, playSentSound, playNotificationSound } from './utils/audioUtils';
 import { isVideoMedia } from './utils/mediaUtils';
 import { formatSmartTime, getCurrentFormattedTime, normalizeCreatedAtIso } from './utils/dateUtils';
+import { isMockOrDemoAccount } from './utils/searchUtils';
 import { 
   syncAccountToCloud, 
   savePlatformStateToCloud, 
@@ -55,7 +57,8 @@ import {
   publishCallSignalToCloud,
   subscribeToCallSignalsFromCloud,
   isFirestoreQuotaExceeded,
-  subscribeToQuotaExceeded
+  subscribeToQuotaExceeded,
+  deleteItemsFromCloud
 } from './firebase';
 import { 
   MessageSquare, 
@@ -69,6 +72,7 @@ import {
   Plus,
   Camera,
   UserPlus,
+  QrCode,
   User as UserIcon,
   Layers,
   Users,
@@ -90,8 +94,22 @@ export default function App() {
   // Application State
   const [currentUser, setCurrentUser] = useState<User>(() => {
     try {
+      const v3 = localStorage.getItem('aurachat_currentUser_v3');
+      if (v3) {
+        const parsed = JSON.parse(v3);
+        if (parsed && parsed.id && !isMockOrDemoAccount(parsed)) return parsed;
+      }
       const saved = localStorage.getItem('aurachat_currentUser');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id && !isMockOrDemoAccount(parsed)) return parsed;
+      }
+      const myAccs = localStorage.getItem('aurachat_my_accounts_v5') || localStorage.getItem('aurachat_savedAccounts_v3');
+      if (myAccs) {
+        const list: User[] = JSON.parse(myAccs);
+        const realAcc = Array.isArray(list) ? list.find((u) => u && u.id && !isMockOrDemoAccount(u) && /^u_\d{10,}$/.test(u.id)) : null;
+        if (realAcc) return realAcc;
+      }
     } catch (e) {}
     return initialCurrentUser;
   });
@@ -250,6 +268,39 @@ export default function App() {
   const [visitors, setVisitors] = useState<ProfileVisitor[]>(initialVisitors);
   const [communityGifs, setCommunityGifs] = useState<CommunityGif[]>(initialCommunityGifs);
   const [savedPostIds, setSavedPostIds] = useState<Record<string, boolean>>({});
+  const [isInviteFromMoreOpen, setIsInviteFromMoreOpen] = useState<boolean>(false);
+
+  // Реестр навсегда удалённых ID (посты, сообщения, чаты, звонки), чтобы серверная синхронизация не возвращала их обратно
+  const [deletedIds, setDeletedIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('aurachat_deleted_ids_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const deletedIdsRef = useRef<Set<string>>(new Set(deletedIds));
+
+  useEffect(() => {
+    deletedIdsRef.current = new Set(deletedIds);
+    try {
+      localStorage.setItem('aurachat_deleted_ids_v1', JSON.stringify(deletedIds));
+    } catch {}
+  }, [deletedIds]);
+
+  const recordDeletedIds = (
+    idsToDelete: string[],
+    options?: { clearChatId?: string; clearCallsUserId?: string }
+  ) => {
+    const cleanIds = idsToDelete.filter(Boolean);
+    if (cleanIds.length > 0) {
+      cleanIds.forEach((id) => deletedIdsRef.current.add(id));
+      setDeletedIds((prev) => Array.from(new Set([...prev, ...cleanIds])));
+    }
+    deleteItemsFromCloud(cleanIds, options);
+  };
 
   useEffect(() => {
     try {
@@ -384,6 +435,37 @@ export default function App() {
     } catch {}
   };
 
+  // Удаление публикации (поста или клипа) навсегда без возврата при синхронизации
+  const handleDeletePost = (postId: string) => {
+    if (!postId) return;
+    playReactionSound();
+    recordDeletedIds([postId]);
+    setPosts((prev) => {
+      const next = prev.filter((p) => p.id !== postId);
+      try {
+        localStorage.setItem('aurachat_user_posts_v2', JSON.stringify(next));
+        localStorage.setItem('aurachat_global_posts_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    setReels((prev) => {
+      const next = prev.filter((r) => r.id !== postId);
+      try {
+        localStorage.setItem('aurachat_user_reels_v2', JSON.stringify(next));
+        localStorage.setItem('aurachat_global_reels_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({ type: 'DELETE_POST', postId });
+        ch.close();
+      }
+    } catch {}
+    triggerToast('🗑 Публикация удалена навсегда');
+  };
+
   const handleAddPostComment = (postId: string, comment: any) => {
     setPosts((prev) =>
       prev.map((p) => {
@@ -424,33 +506,78 @@ export default function App() {
   const [lastLoggedUser, setLastLoggedUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem('aurachat_currentUser_v3');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && !isMockOrDemoAccount(parsed)) return parsed;
+      }
       const legacy = localStorage.getItem('aurachat_currentUser');
       if (legacy) {
         const parsed = JSON.parse(legacy);
-        if (parsed && parsed.id !== 'usr_me' && parsed.id !== 'u_durov' && parsed.id !== 'u_anna') {
+        if (parsed && !isMockOrDemoAccount(parsed)) {
           return parsed;
         }
       }
     } catch (e) {}
     return null;
   });
+
+  // Personal accounts logged in on THIS device ONLY (like slim.accounts in SlimChat)
   const [savedAccounts, setSavedAccounts] = useState<User[]>(() => {
+    const isSeededTestAccount = (u: User) =>
+      !u ||
+      isMockOrDemoAccount(u) ||
+      u.id === 'u_abonent_7564' ||
+      u.id === 'u_user_4383' ||
+      u.id === 'u_stvbgavava' ||
+      u.id === 'u_maksim_1';
+
     try {
-      const saved = localStorage.getItem('aurachat_savedAccounts_v3');
-      if (saved) return JSON.parse(saved);
-      // Clean legacy mock accounts if present
-      const legacy = localStorage.getItem('aurachat_savedAccounts');
-      if (legacy) {
-        const parsed: User[] = JSON.parse(legacy);
-        const filtered = parsed.filter(
-          (a) => a.id !== 'u_durov' && a.id !== 'u_anna' && a.id !== 'usr_me'
-        );
-        if (filtered.length > 0) return filtered;
+      const v5 = localStorage.getItem('aurachat_my_accounts_v5');
+      if (v5) {
+        const parsed: User[] = JSON.parse(v5);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter((a) => !isSeededTestAccount(a));
+          if (clean.length > 0) return clean;
+        }
+      }
+      const saved = localStorage.getItem('aurachat_savedAccounts_v3') || localStorage.getItem('aurachat_savedAccounts');
+      if (saved) {
+        const parsed: User[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((a) => !isSeededTestAccount(a));
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
     return [];
   });
+
+  // Global directory of all registered users from the Shared Server (used ONLY for search, never polluting my personal Account Switcher)
+  const [globalServerUsers, setGlobalServerUsers] = useState<User[]>([]);
+
+  const allDirectoryUsers = React.useMemo(() => {
+    const map = new Map<string, User>();
+    [...savedAccounts, ...globalServerUsers].forEach((u) => {
+      if (!u || !u.id || isMockOrDemoAccount(u)) return;
+      map.set(u.id, u);
+    });
+    if (currentUser && currentUser.id && !isMockOrDemoAccount(currentUser)) {
+      map.set(currentUser.id, currentUser);
+    }
+    return Array.from(map.values());
+  }, [savedAccounts, globalServerUsers, currentUser]);
+
+  const myDeviceAccounts = React.useMemo(() => {
+    const map = new Map<string, User>();
+    if (currentUser && currentUser.id && !isMockOrDemoAccount(currentUser)) {
+      map.set(currentUser.id, currentUser);
+    }
+    savedAccounts.forEach((u) => {
+      if (!u || !u.id || isMockOrDemoAccount(u)) return;
+      map.set(u.id, u);
+    });
+    return Array.from(map.values());
+  }, [savedAccounts, currentUser]);
 
   // Helper to create pure "Избранное" (Saved Messages) chat for any user
   const createSavedMessagesChat = (user: User): Chat => ({
@@ -517,8 +644,10 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_savedAccounts', JSON.stringify(savedAccounts));
-      localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(savedAccounts));
+      const cleanAccs = savedAccounts.filter((a) => !isMockOrDemoAccount(a));
+      localStorage.setItem('aurachat_my_accounts_v5', JSON.stringify(cleanAccs));
+      localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(cleanAccs));
+      localStorage.setItem('aurachat_savedAccounts', JSON.stringify(cleanAccs));
     } catch (e) {}
   }, [savedAccounts]);
 
@@ -602,33 +731,64 @@ export default function App() {
           };
 
     // 1. Save current account's chats and calls into maps
-    setUserChatsMap((prev) => ({
-      ...prev,
-      [currentUser.id]: chats
-    }));
+    const targetChats =
+      userChatsMap[enteringUser.id] && userChatsMap[enteringUser.id].length > 0
+        ? userChatsMap[enteringUser.id]
+        : [createSavedMessagesChat(enteringUser)];
+
+    setUserChatsMap((prev) => {
+      const next = {
+        ...prev,
+        [currentUser.id]: chats,
+        [enteringUser.id]: prev[enteringUser.id]?.length ? prev[enteringUser.id] : targetChats
+      };
+      try {
+        localStorage.setItem('aurachat_userChatsMap_v2', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
     setUserCallsMap((prev) => ({
       ...prev,
       [currentUser.id]: calls
     }));
 
-    setSavedAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id === exitingUser.id) return exitingUser;
-        if (acc.id === enteringUser.id) return enteringUser;
-        return acc;
-      })
-    );
+    setSavedAccounts((prev) => {
+      const map = new Map<string, User>();
+      prev.forEach((acc) => {
+        if (!acc || !acc.id || isMockOrDemoAccount(acc)) return;
+        if (acc.id === exitingUser.id) {
+          map.set(acc.id, exitingUser);
+        } else {
+          map.set(acc.id, acc);
+        }
+      });
+      if (!isMockOrDemoAccount(enteringUser)) {
+        map.set(enteringUser.id, enteringUser);
+      }
+      const nextList = Array.from(map.values());
+      try {
+        localStorage.setItem('aurachat_my_accounts_v5', JSON.stringify(nextList));
+        localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(nextList));
+      } catch {}
+      return nextList;
+    });
 
-    if (exitingUser.id !== enteringUser.id) {
+    try {
+      localStorage.setItem('aurachat_currentUser', JSON.stringify(enteringUser));
+      localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(enteringUser));
+    } catch {}
+
+    if (exitingUser.id !== enteringUser.id && !isMockOrDemoAccount(exitingUser)) {
       broadcastUserPresence(exitingUser);
     }
     broadcastUserPresence(enteringUser);
 
+    setSelectedOtherUser(null);
     setCurrentUser(enteringUser);
     setLastLoggedUser(enteringUser);
 
-    // 2. Load target user's chats (if new account -> only [savedChat]) and calls (if new account -> [])
-    const targetChats = userChatsMap[enteringUser.id] || [createSavedMessagesChat(enteringUser)];
+    // 2. Load target user's chats and calls
     setChats(targetChats);
     setSelectedChat({ ...targetChats[0], unreadCount: 0 });
     const targetCalls = (userCallsMap[enteringUser.id] || []).filter(
@@ -636,6 +796,7 @@ export default function App() {
     );
     setCalls(targetCalls);
     setIsMobileChatOpen(false);
+    triggerToast(`✅ Вы переключились на аккаунт ${enteringUser.displayName} (@${enteringUser.username})`);
   };
 
   // Complete Logout Handler ("надо полностью выйти из аккаунта")
@@ -687,6 +848,9 @@ export default function App() {
 
   const handleClearChatHistory = (chatId: string, forBoth: boolean = false) => {
     playReactionSound();
+    const existingMsgIds = (messagesMap[chatId] || []).map((m) => m.id);
+    recordDeletedIds(existingMsgIds, { clearChatId: chatId });
+
     if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         const channel = new BroadcastChannel('aurachat_live_messages_sync');
@@ -706,9 +870,11 @@ export default function App() {
     );
   };
 
-  // Delete individual message (synchronized across peers)
+  // Delete individual message (synchronized across peers & permanently tombstoned)
   const handleDeleteMessage = (chatId: string, messageId: string, forBoth: boolean = true) => {
     playReactionSound();
+    recordDeletedIds([messageId]);
+
     setMessagesMap((prev) => {
       const currentList = prev[chatId] || [];
       const updatedList = currentList.filter((m) => m.id !== messageId);
@@ -742,6 +908,9 @@ export default function App() {
   // Delete chat for self or for both users
   const handleDeleteChat = (chatId: string, forBoth: boolean = false) => {
     playReactionSound();
+    const existingMsgIds = (messagesMap[chatId] || []).map((m) => m.id);
+    recordDeletedIds([chatId, ...existingMsgIds], { clearChatId: chatId });
+
     if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
         const channel = new BroadcastChannel('aurachat_live_messages_sync');
@@ -755,6 +924,8 @@ export default function App() {
       delete copy[chatId];
       return copy;
     });
+
+    setGlobalCatalogChats((prev) => prev.filter((c) => c.id !== chatId));
 
     setChats((prev) => {
       const remaining = prev.filter((c) => c.id !== chatId);
@@ -771,6 +942,7 @@ export default function App() {
   // Leave group or channel
   const handleLeaveChat = (chatId: string) => {
     playReactionSound();
+    recordDeletedIds([chatId]);
     setChats((prev) => {
       const remaining = prev.filter((c) => c.id !== chatId);
       const fallback = remaining[0] || createSavedMessagesChat(currentUser);
@@ -926,17 +1098,18 @@ export default function App() {
   };
 
 
-  // Request Account Switch (Only prompts for PIN if the account has a PIN configured in Settings)
-  const handleRequestSwitchUser = (targetUser: User) => {
+  // Instant 1-click Account Switch on trusted device (like SlimChat)
+  const handleRequestSwitchUser = (targetUser: User, requirePin: boolean = false) => {
+    if (!targetUser) return;
     if (isLoggedIn && targetUser.id === currentUser.id) return;
-    if (targetUser.pinCode && targetUser.pinCode.length >= 4) {
+    if (requirePin && targetUser.pinCode && targetUser.pinCode.length >= 4) {
       setPinPromptTargetUser(targetUser);
     } else {
       handlePinPromptSuccess(targetUser);
     }
   };
 
-  // Called when 6-digit PIN is successfully verified or newly created
+  // Called when switching accounts or when 6-digit PIN is verified
   const handlePinPromptSuccess = (authenticatedUser: User, updatedPin?: string) => {
     let finalUser = authenticatedUser;
     if (updatedPin) {
@@ -945,16 +1118,12 @@ export default function App() {
         pinCode: updatedPin,
         hasPin: true
       };
-      setSavedAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === finalUser.id ? finalUser : acc
-        )
-      );
     }
     handleSwitchUser(finalUser);
     setIsLoggedIn(true);
     setPinPromptTargetUser(null);
     setIsSettingsOpen(false);
+    setIsMainMenuOpen(false);
     setIsAuthModalOpen(false);
   };
 
@@ -999,7 +1168,22 @@ export default function App() {
 
     setCurrentUser(newUser);
     setLastLoggedUser(newUser);
-    setSavedAccounts((prev) => [...prev, newUser]);
+    setSavedAccounts((prev) => {
+      const updated = [...prev, newUser];
+      savePlatformStateToCloud({
+        savedAccounts: updated,
+        userChatsMap: { ...userChatsMap, [currentUser.id]: chats, [newUser.id]: [newSavedChat] },
+        globalCatalogChats,
+        messagesMap,
+        communities,
+        stories,
+        posts,
+        reels,
+        callsMap: userCallsMap
+      });
+      return updated;
+    });
+    syncAccountToCloud(newUser, [newSavedChat]);
 
     // 4. Set chats to ONLY [newSavedChat], empty calls [], and reset subscriptions so there are NO foreign stories or missed calls
     setChats([newSavedChat]);
@@ -1106,6 +1290,7 @@ export default function App() {
     return initialCommunities;
   });
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
+  const [selectedCommunityInitialTab, setSelectedCommunityInitialTab] = useState<string | undefined>(undefined);
 
   const handleCreateCommunity = (newComm: Community) => {
     playSentSound();
@@ -1113,15 +1298,29 @@ export default function App() {
     const strictComm: Community = {
       ...newComm,
       subscribersCount: 1,
-      subscribersUserIds: [currentUser.id]
+      subscribersUserIds: [currentUser.id],
+      updatedAt: Date.now()
     };
-    setCommunities((prev) => [strictComm, ...prev]);
+    setCommunities((prev) => {
+      const next = [strictComm, ...prev];
+      savePlatformStateToCloud({ communities: next });
+      return next;
+    });
+    setSelectedCommunityInitialTab('posts');
     setSelectedCommunity(strictComm);
   };
 
   const handleUpdateCommunity = (updated: Community) => {
-    setCommunities((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    setSelectedCommunity(updated);
+    const stamped: Community = {
+      ...updated,
+      updatedAt: Date.now()
+    };
+    setCommunities((prev) => {
+      const next = prev.map((c) => (c.id === stamped.id ? stamped : c));
+      savePlatformStateToCloud({ communities: next });
+      return next;
+    });
+    setSelectedCommunity((prev) => (prev && prev.id === stamped.id ? stamped : prev));
   };
 
   const handlePublishCommunityPost = (communityId: string, postData: Partial<Post> & { caption?: string }) => {
@@ -1155,13 +1354,34 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    setPosts((prev) => [newPost, ...prev]);
-    setCommunities((prev) =>
-      prev.map((c) => (c.id === communityId ? { ...c, postsCount: c.postsCount + 1 } : c))
-    );
+    setPosts((prev) => {
+      const nextPosts = [newPost, ...prev];
+      setCommunities((prevComms) => {
+        const nextComms = prevComms.map((c) =>
+          c.id === communityId
+            ? { ...c, postsCount: c.postsCount + 1, updatedAt: Date.now() }
+            : c
+        );
+        savePlatformStateToCloud({
+          posts: nextPosts,
+          communities: nextComms
+        });
+        return nextComms;
+      });
+      return nextPosts;
+    });
     if (selectedCommunity && selectedCommunity.id === communityId) {
-      setSelectedCommunity((prev) => (prev ? { ...prev, postsCount: prev.postsCount + 1 } : null));
+      setSelectedCommunity((prev) =>
+        prev ? { ...prev, postsCount: prev.postsCount + 1, updatedAt: Date.now() } : null
+      );
     }
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        ch.postMessage({ type: 'NEW_POST', post: newPost });
+        ch.close();
+      }
+    } catch {}
   };
 
   const [isMainMenuOpen, setIsMainMenuOpen] = useState(false);
@@ -1237,145 +1457,245 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Real-time Cloud Firestore Sync (when online, syncs accounts, chats, channels, communities, posts, reels, stories, messages)
+  // Real-time Shared Server Sync (syncs accounts, chats, channels, communities, posts, reels, stories, messages across all browsers/devices)
   useEffect(() => {
+    // Push local browser state once on mount so any accounts/chats in localStorage are registered on the Shared Server
+    savePlatformStateToCloud({
+      savedAccounts: savedAccounts.some((a) => a.id === currentUser.id)
+        ? savedAccounts
+        : [currentUser, ...savedAccounts],
+      userChatsMap: { ...userChatsMap, [currentUser.id]: chats },
+      globalCatalogChats,
+      messagesMap,
+      communities,
+      stories,
+      posts,
+      reels,
+      callsMap: userCallsMap,
+      deletedIds
+    });
+
     const unsub = subscribeToCloudPlatformState((data) => {
       isIncomingCloudUpdateRef.current = true;
+      if (Array.isArray(data.deletedIds) && data.deletedIds.length > 0) {
+        data.deletedIds.forEach((id: string) => {
+          if (id) deletedIdsRef.current.add(id);
+        });
+        setDeletedIds((prev) => Array.from(new Set([...prev, ...(data.deletedIds || [])])));
+      }
+      const deletedSet = deletedIdsRef.current;
+
       const cloudAccounts = data.savedAccounts;
       if (Array.isArray(cloudAccounts) && cloudAccounts.length > 0) {
-        setSavedAccounts((prev) => {
-          const map = new Map(prev.map((u) => [u.id, u]));
-          cloudAccounts.forEach((u: User) => map.set(u.id, u));
+        // Store all server users in globalServerUsers (for search) WITHOUT flooding personal savedAccounts!
+        setGlobalServerUsers((prev) => {
+          const map = new Map<string, User>();
+          prev.forEach((u) => {
+            if (u && u.id && !isMockOrDemoAccount(u) && !deletedSet.has(u.id)) map.set(u.id, u);
+          });
+          cloudAccounts.forEach((u: User) => {
+            if (!u || !u.id || isMockOrDemoAccount(u) || deletedSet.has(u.id)) return;
+            map.set(u.id, u);
+          });
           return Array.from(map.values());
         });
       }
+      const cloudUserChatsMap = data.userChatsMap;
+      if (cloudUserChatsMap && typeof cloudUserChatsMap === 'object') {
+        setUserChatsMap((prev) => {
+          const next = { ...prev };
+          Object.keys(cloudUserChatsMap).forEach((uid) => {
+            const remoteList = cloudUserChatsMap[uid];
+            if (Array.isArray(remoteList)) {
+              const localList = (next[uid] || []).filter((c) => c && c.id && !deletedSet.has(c.id));
+              const map = new Map(localList.map((c) => [c.id, c]));
+              remoteList.forEach((c: Chat) => {
+                if (c && c.id && !deletedSet.has(c.id)) map.set(c.id, c);
+              });
+              next[uid] = Array.from(map.values());
+            }
+          });
+          return next;
+        });
+      }
       const cloudChats = data.globalCatalogChats;
-      if (Array.isArray(cloudChats) && cloudChats.length > 0) {
+      if (Array.isArray(cloudChats)) {
         setGlobalCatalogChats((prev) => {
-          const map = new Map(prev.map((c) => [c.id, c]));
-          cloudChats.forEach((c: Chat) => map.set(c.id, c));
+          const map = new Map(prev.filter((c) => c && c.id && !deletedSet.has(c.id)).map((c) => [c.id, c]));
+          cloudChats.forEach((c: Chat) => {
+            if (c && c.id && !deletedSet.has(c.id)) map.set(c.id, c);
+          });
           return Array.from(map.values());
         });
       }
       const cloudCommunities = data.communities;
-      if (Array.isArray(cloudCommunities) && cloudCommunities.length > 0) {
+      if (Array.isArray(cloudCommunities)) {
         setCommunities((prev) => {
-          const map = new Map(prev.map((c) => [c.id, c]));
-          cloudCommunities.forEach((c: Community) => map.set(c.id, c));
+          const map = new Map(prev.filter((c) => c && c.id && !deletedSet.has(c.id)).map((c) => [c.id, c]));
+          cloudCommunities.forEach((c: Community) => {
+            if (!c || !c.id || deletedSet.has(c.id)) return;
+            const local = map.get(c.id);
+            if (!local || (c.updatedAt || 0) >= (local.updatedAt || 0)) {
+              map.set(c.id, c);
+            }
+          });
           return Array.from(map.values());
+        });
+        setSelectedCommunity((prev) => {
+          if (!prev || deletedSet.has(prev.id)) return null;
+          const updatedRemote = cloudCommunities.find((c: Community) => c && c.id === prev.id);
+          if (updatedRemote && (updatedRemote.updatedAt || 0) >= (prev.updatedAt || 0)) {
+            return updatedRemote;
+          }
+          return prev;
         });
       }
       const cloudPosts = data.posts;
-      if (Array.isArray(cloudPosts) && cloudPosts.length > 0) {
+      if (Array.isArray(cloudPosts)) {
         setPosts((prev) => {
-          const map = new Map(prev.map((p) => [p.id, p]));
-          cloudPosts.forEach((p: Post) =>
+          const map = new Map(prev.filter((p) => p && p.id && !deletedSet.has(p.id)).map((p) => [p.id, p]));
+          cloudPosts.forEach((p: Post) => {
+            if (!p || !p.id || deletedSet.has(p.id)) return;
             map.set(p.id, {
               ...p,
               createdAt: normalizeCreatedAtIso(p.createdAt, p.id)
-            })
-          );
+            });
+          });
           return Array.from(map.values());
         });
       }
       const cloudReels = data.reels;
-      if (Array.isArray(cloudReels) && cloudReels.length > 0) {
+      if (Array.isArray(cloudReels)) {
         setReels((prev) => {
-          const map = new Map(prev.map((r) => [r.id, r]));
-          cloudReels.forEach((r: Post) =>
+          const map = new Map(prev.filter((r) => r && r.id && !deletedSet.has(r.id)).map((r) => [r.id, r]));
+          cloudReels.forEach((r: Post) => {
+            if (!r || !r.id || deletedSet.has(r.id)) return;
             map.set(r.id, {
               ...r,
               createdAt: normalizeCreatedAtIso(r.createdAt, r.id)
-            })
-          );
+            });
+          });
           return Array.from(map.values());
         });
       }
       const cloudStories = data.stories;
-      if (Array.isArray(cloudStories) && cloudStories.length > 0) {
+      if (Array.isArray(cloudStories)) {
         setStories((prev) => {
-          const map = new Map(prev.map((s) => [s.id, s]));
-          cloudStories.forEach((s: Story) => map.set(s.id, s));
+          const map = new Map(prev.filter((s) => s && s.id && !deletedSet.has(s.id)).map((s) => [s.id, s]));
+          cloudStories.forEach((s: Story) => {
+            if (s && s.id && !deletedSet.has(s.id)) map.set(s.id, s);
+          });
           return Array.from(map.values());
         });
       }
       const cloudMessagesMap = data.messagesMap;
       if (cloudMessagesMap && typeof cloudMessagesMap === 'object') {
         setMessagesMap((prev) => {
-          const updated = { ...prev };
-          let changed = false;
+          const updated: Record<string, Message[]> = {};
+          Object.keys(prev).forEach((cid) => {
+            if (!deletedSet.has(cid)) {
+              updated[cid] = (prev[cid] || []).filter((m) => m && m.id && !deletedSet.has(m.id));
+            }
+          });
           Object.keys(cloudMessagesMap).forEach((chatId) => {
+            if (deletedSet.has(chatId)) return;
             const remoteMsgs = cloudMessagesMap[chatId];
-            if (Array.isArray(remoteMsgs) && remoteMsgs.length > 0) {
-              const existingMsgs = updated[chatId] || [];
+            if (Array.isArray(remoteMsgs)) {
+              const existingMsgs = (updated[chatId] || []).filter((m) => m && m.id && !deletedSet.has(m.id));
               const map = new Map(existingMsgs.map((m) => [m.id, m]));
               remoteMsgs.forEach((m: Message) => {
-                if (!m || !m.id) return;
+                if (!m || !m.id || deletedSet.has(m.id)) return;
                 const prevItem = map.get(m.id);
                 if (!prevItem || (prevItem.status !== 'read' && m.status === 'read')) {
                   map.set(m.id, prevItem ? { ...prevItem, ...m, status: m.status } : m);
-                  changed = true;
                 }
               });
-              const merged = Array.from(map.values());
-              if (merged.length !== existingMsgs.length || changed) {
-                updated[chatId] = merged;
-                changed = true;
-              }
+              updated[chatId] = Array.from(map.values());
             }
           });
-          return changed ? updated : prev;
+          return updated;
         });
       }
       setTimeout(() => {
         isIncomingCloudUpdateRef.current = false;
-      }, 4000);
+      }, 800);
     });
     return () => unsub();
   }, []);
 
   useEffect(() => {
-    if (isIncomingCloudUpdateRef.current || isFirestoreQuotaExceeded()) {
+    if (isIncomingCloudUpdateRef.current) {
       return;
     }
     const timer = setTimeout(() => {
-      if (isIncomingCloudUpdateRef.current || isFirestoreQuotaExceeded()) return;
+      if (isIncomingCloudUpdateRef.current) return;
       savePlatformStateToCloud({
-        savedAccounts,
-        userChatsMap,
+        savedAccounts: savedAccounts.some((a) => a.id === currentUser.id)
+          ? savedAccounts
+          : [currentUser, ...savedAccounts],
+        userChatsMap: { ...userChatsMap, [currentUser.id]: chats },
         globalCatalogChats,
         messagesMap,
         communities,
         stories,
         posts,
         reels,
-        callsMap: userCallsMap
+        callsMap: userCallsMap,
+        deletedIds
       });
-    }, 8000);
+    }, 1200);
     return () => clearTimeout(timer);
-  }, [savedAccounts, userChatsMap, globalCatalogChats, messagesMap, communities, stories, posts, reels, userCallsMap]);
+  }, [currentUser, savedAccounts, chats, userChatsMap, globalCatalogChats, messagesMap, communities, stories, posts, reels, userCallsMap, deletedIds]);
 
-  // Real-time Cloud Signaling listener: Phone <-> Computer calls ringing across devices and accounts
+  // Real-time Cloud Signaling listener: Звонок поступает СТРОГО выбранному человеку (по targetUserId / targetUsername / targetPhone / targetUserIds), а НЕ всем подряд
   useEffect(() => {
+    const normalizeDigits = (val?: string) => (val || '').replace(/\D/g, '');
+
+    const isCallAddressedToCurrentUser = (sig: any): boolean => {
+      if (!sig) return false;
+      if (sig.callerId && sig.callerId === currentUser.id) return false;
+      if (
+        sig.callerUsername &&
+        currentUser.username &&
+        sig.callerUsername.toLowerCase() === currentUser.username.toLowerCase() &&
+        sig.callerId === currentUser.id
+      ) {
+        return false;
+      }
+
+      // 1. Строгое совпадение по targetUserId (если указан)
+      if (sig.targetUserId) {
+        return sig.targetUserId === currentUser.id;
+      }
+
+      // 2. Список выбранных участников группового звонка (targetUserIds)
+      if (Array.isArray(sig.targetUserIds) && sig.targetUserIds.length > 0) {
+        return sig.targetUserIds.includes(currentUser.id);
+      }
+
+      // 3. Строгое совпадение по @username (если targetUserId не был передан)
+      if (sig.targetUsername && currentUser.username) {
+        return sig.targetUsername.replace(/^@/, '').toLowerCase() === currentUser.username.replace(/^@/, '').toLowerCase();
+      }
+
+      // 4. Строгое совпадение по номеру телефона (если звонок набран по номеру)
+      if (sig.targetPhone && currentUser.phone) {
+        const targetDigits = normalizeDigits(sig.targetPhone);
+        const myDigits = normalizeDigits(currentUser.phone);
+        if (targetDigits.length >= 7 && myDigits.length >= 7) {
+          return targetDigits.slice(-10) === myDigits.slice(-10);
+        }
+      }
+
+      // Без точного адресата звонок НЕ должен звенеть у всех пользователей!
+      return false;
+    };
+
     const unsub = subscribeToCallSignalsFromCloud((signal) => {
       if (!signal || !signal.timestamp || Date.now() - signal.timestamp > 120000) return;
 
       if (signal.type === 'CALL_OFFER') {
-        // Do not ring caller's own device as incoming call
-        if (signal.callerId && signal.callerId === currentUser.id) return;
-
-        // Check if target user matches currentUser (by ID, username, or display name)
-        const isTargetMe =
-          (signal.targetUserId && signal.targetUserId === currentUser.id) ||
-          (signal.targetUsername && signal.targetUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
-          (signal.targetName && (
-            signal.targetName.toLowerCase() === currentUser.displayName.toLowerCase() ||
-            currentUser.displayName.toLowerCase().includes(signal.targetName.toLowerCase()) ||
-            signal.targetName.toLowerCase().includes(currentUser.displayName.toLowerCase())
-          )) ||
-          (!signal.targetUserId && !signal.targetUsername); // Generic call
-
-        if (isTargetMe) {
+        if (isCallAddressedToCurrentUser(signal)) {
           setActiveCallSession((prev) => {
             if (prev) return prev;
             return {
@@ -1400,7 +1720,7 @@ export default function App() {
     return () => unsub();
   }, [currentUser]);
 
-  // Cross-tab signaling: when another subscriber calls from another tab, trigger real incoming call
+  // Cross-tab signaling: звонок во второй вкладке срабатывает ТОЛЬКО если там открыт именно вызываемый аккаунт
   useEffect(() => {
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
     const channel = new BroadcastChannel('applet_webrtc_call_sync');
@@ -1410,6 +1730,19 @@ export default function App() {
       if (!data) return;
 
       if (data.type === 'CALL_OFFER') {
+        if (data.callerId && data.callerId === currentUser.id) return;
+
+        const isForMe =
+          (data.targetUserId && data.targetUserId === currentUser.id) ||
+          (Array.isArray(data.targetUserIds) && data.targetUserIds.includes(currentUser.id)) ||
+          (!data.targetUserId &&
+            data.targetUsername &&
+            currentUser.username &&
+            data.targetUsername.replace(/^@/, '').toLowerCase() ===
+              currentUser.username.replace(/^@/, '').toLowerCase());
+
+        if (!isForMe) return;
+
         setActiveCallSession((prev) => {
           if (prev) return prev;
           return {
@@ -1417,7 +1750,9 @@ export default function App() {
             contactName: data.contactName || 'Входящий звонок AuraChat',
             avatarUrl: data.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
             isVideo: Boolean(data.isVideo),
-            callId: data.callId
+            callId: data.callId,
+            callerUserId: data.callerId,
+            callerUsername: data.callerUsername
           };
         });
       }
@@ -1598,6 +1933,13 @@ export default function App() {
         return;
       }
 
+      if (data.type === 'DELETE_POST' && data.postId) {
+        deletedIdsRef.current.add(data.postId);
+        setPosts((prev) => prev.filter((p) => p.id !== data.postId));
+        setReels((prev) => prev.filter((r) => r.id !== data.postId));
+        return;
+      }
+
       if (data.type === 'NEW_STORY' && data.story) {
         setStories((prev) => (prev.some((s) => s.id === data.story.id) ? prev : [data.story, ...prev]));
         return;
@@ -1612,9 +1954,14 @@ export default function App() {
 
       if (data.type === 'USER_PRESENCE_UPDATE' && data.user) {
         const updatedPeer: User = data.user;
-        setSavedAccounts((prev) => {
+        setGlobalServerUsers((prev) => {
           const exists = prev.some((u) => u.id === updatedPeer.id);
           if (!exists) return [...prev, updatedPeer];
+          return prev.map((u) => (u.id === updatedPeer.id ? { ...u, ...updatedPeer } : u));
+        });
+        setSavedAccounts((prev) => {
+          const exists = prev.some((u) => u.id === updatedPeer.id);
+          if (!exists) return prev;
           return prev.map((u) => (u.id === updatedPeer.id ? { ...u, ...updatedPeer } : u));
         });
         if (updatedPeer.id === currentUser.id) {
@@ -1910,28 +2257,54 @@ export default function App() {
       onlinePeerMap[activeChatId] && Date.now() - onlinePeerMap[activeChatId] < 120000
     );
     const uniqueMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const resolvedTopicId =
+      meta?.topicId ||
+      (selectedChat.topics && selectedChat.topics.length > 0 ? selectedChat.topics[0].id : undefined);
+
     const newMsg: Message = {
       id: uniqueMsgId,
       chatId: activeChatId,
+      topicId: resolvedTopicId,
       senderId: senderOverride ? senderOverride.id : currentUser.id,
-      senderName: senderOverride ? senderOverride.name : currentUser.displayName,
-      senderAvatar: senderOverride ? senderOverride.avatar : currentUser.avatarUrl,
+      senderName: senderOverride
+        ? senderOverride.name
+        : selectedChat.type === 'channel'
+        ? selectedChat.title
+        : currentUser.displayName,
+      senderAvatar: senderOverride
+        ? senderOverride.avatar
+        : selectedChat.type === 'channel'
+        ? selectedChat.avatarUrl
+        : currentUser.avatarUrl,
       type: type,
       content: content || (type === 'voice' ? 'Голосовое сообщение' : 'Круглое видеосообщение'),
       mediaUrl: mediaUrl,
       mediaMeta: meta,
       createdAt: new Date().toISOString(),
-      // 1 checkmark ('sent') until recipient enters the chat; 2 checkmarks ('read') if in Saved Messages or peer is actively in chat
       status: senderOverride || selectedChat.type === 'saved' || isPeerCurrentlyOnline ? 'read' : 'sent'
     };
 
     if (senderOverride) {
-      // Interlocutor entered chat and replied -> mark interlocutor online and mark previous outgoing messages as read (2 checkmarks)
       setOnlinePeerMap((prev) => ({
         ...prev,
         [activeChatId]: Date.now()
       }));
     }
+
+    const previewText =
+      type === 'video_note'
+        ? '📹 Кружочек'
+        : type === 'voice'
+        ? '🎤 Голосовое сообщение'
+        : type === 'image'
+        ? meta?.isVideo
+          ? '🎬 Видеозапись'
+          : '📷 Фотография'
+        : type === 'audio'
+        ? `🎵 ${content || 'Аудиозапись'}`
+        : content;
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
 
     setMessagesMap((prev) => {
       const chatMsgs = prev[activeChatId] || [];
@@ -1939,25 +2312,87 @@ export default function App() {
       const updatedExisting = senderOverride
         ? chatMsgs.map((m) => (m.senderId === currentUser.id ? { ...m, status: 'read' as const } : m))
         : chatMsgs;
-      return {
+      const nextMessagesMap = {
         ...prev,
         [activeChatId]: [...updatedExisting, newMsg]
       };
+
+      // Immediately sync group/channel/direct publications to the shared server
+      savePlatformStateToCloud({
+        messagesMap: nextMessagesMap
+      });
+
+      return nextMessagesMap;
     });
 
-    // Update last message in chat preview & keep unreadCount at 0 for active chat
-    setChats((prev) =>
-      prev.map((c) =>
+    // Update last message in chat preview & sync across userChatsMap and globalCatalogChats
+    setChats((prev) => {
+      const updatedChats = prev.map((c) =>
         c.id === activeChatId
           ? {
               ...c,
-              lastMessage: type === 'video_note' ? '📹 Кружочек' : type === 'voice' ? '🎤 Голосовое сообщение' : content,
-              lastMessageTime: new Date().toISOString(),
-              unreadCount: 0
+              lastMessage: previewText,
+              lastMessageTime: nowIso,
+              unreadCount: 0,
+              updatedAt: nowMs
             }
           : c
-      )
+      );
+      setUserChatsMap((prevMap) => {
+        const nextMap: Record<string, Chat[]> = {
+          ...prevMap,
+          [currentUser.id]: updatedChats
+        };
+        // Also update the chat preview for other members of this group/channel/direct chat
+        (selectedChat.members || []).forEach((m) => {
+          if (m.userId && m.userId !== currentUser.id && Array.isArray(nextMap[m.userId])) {
+            nextMap[m.userId] = nextMap[m.userId].map((c) =>
+              c.id === activeChatId
+                ? {
+                    ...c,
+                    lastMessage: previewText,
+                    lastMessageTime: nowIso,
+                    unreadCount: (c.unreadCount || 0) + 1,
+                    updatedAt: nowMs
+                  }
+                : c
+            );
+          }
+        });
+        savePlatformStateToCloud({ userChatsMap: nextMap });
+        return nextMap;
+      });
+      return updatedChats;
+    });
+
+    setSelectedChat((prev) =>
+      prev.id === activeChatId
+        ? {
+            ...prev,
+            lastMessage: previewText,
+            lastMessageTime: nowIso,
+            unreadCount: 0,
+            updatedAt: nowMs
+          }
+        : prev
     );
+
+    if (selectedChat.type === 'group' || selectedChat.type === 'channel') {
+      setGlobalCatalogChats((prev) => {
+        const nextCatalog = prev.map((c) =>
+          c.id === activeChatId
+            ? {
+                ...c,
+                lastMessage: previewText,
+                lastMessageTime: nowIso,
+                updatedAt: nowMs
+              }
+            : c
+        );
+        savePlatformStateToCloud({ globalCatalogChats: nextCatalog });
+        return nextCatalog;
+      });
+    }
 
     // Broadcast live message to other tabs/windows so real managers/users chat across tabs
     try {
@@ -2228,123 +2663,166 @@ export default function App() {
     setSelectedChat((prev) => (prev.id === updatedChat.id ? updatedChat : prev));
   };
 
-  // Submit Join Request (Guest joins via invite link or QR code)
-  const handleRequestJoin = (chatId: string, guestUser: { userName: string; username: string; avatarUrl: string }) => {
+  // Submit Join Request (Пользователь подаёт заявку в закрытую группу или канал)
+  const handleRequestJoin = (
+    chatId: string,
+    guestUser: { userId?: string; userName: string; username: string; avatarUrl: string }
+  ) => {
+    const now = Date.now();
+    const applicantId = guestUser.userId || currentUser.id;
+    const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     const newReq = {
-      id: 'req_' + Date.now(),
-      userId: 'usr_guest_' + Date.now(),
-      userName: guestUser.userName,
-      username: guestUser.username,
-      userAvatar: guestUser.avatarUrl,
-      requestedAt: 'Только что'
+      id: 'req_' + now,
+      userId: applicantId,
+      userName: guestUser.userName || currentUser.displayName,
+      username: guestUser.username || currentUser.username,
+      userAvatar: guestUser.avatarUrl || currentUser.avatarUrl,
+      requestedAt: `Сегодня в ${timeStr}`
     };
 
-    setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          const reqs = [...(c.joinRequests || []), newReq];
-          return { ...c, joinRequests: reqs };
-        }
-        return c;
-      })
-    );
+    const appendReqToChat = (c: Chat): Chat => {
+      if (c.id !== chatId) return c;
+      const filtered = (c.joinRequests || []).filter((r) => r.userId !== applicantId);
+      return {
+        ...c,
+        joinRequests: [...filtered, newReq],
+        updatedAt: now
+      };
+    };
 
-    setSelectedChat((prev) => {
-      if (prev.id === chatId) {
-        return {
-          ...prev,
-          joinRequests: [...(prev.joinRequests || []), newReq]
-        };
-      }
-      return prev;
+    setChats((prev) => prev.map(appendReqToChat));
+    setSelectedChat((prev) => (prev.id === chatId ? appendReqToChat(prev) : prev));
+    setGlobalCatalogChats((prev) => {
+      const nextCatalog = prev.map(appendReqToChat);
+      savePlatformStateToCloud({ globalCatalogChats: nextCatalog });
+      return nextCatalog;
+    });
+    setUserChatsMap((prevMap) => {
+      const nextMap: Record<string, Chat[]> = {};
+      Object.keys(prevMap).forEach((uid) => {
+        nextMap[uid] = (prevMap[uid] || []).map(appendReqToChat);
+      });
+      savePlatformStateToCloud({ userChatsMap: nextMap });
+      return nextMap;
     });
   };
 
-  // Approve Join Request (Owner or Moderator adds member to chat)
+  // Approve Join Request (Владелец или модератор принимает заявку пользователя)
   const handleApproveRequest = (chatId: string, req: any) => {
-    setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          const updatedReqs = (c.joinRequests || []).filter((r) => r.id !== req.id);
-          const newMember = {
-            userId: req.userId,
-            displayName: req.userName,
-            username: req.username,
-            avatarUrl: req.userAvatar,
-            role: 'member' as const
-          };
-          return {
-            ...c,
-            joinRequests: updatedReqs,
-            members: [...c.members, newMember],
-            membersCount: c.membersCount + 1
-          };
-        }
-        return c;
-      })
-    );
+    const now = Date.now();
+    const applyApproval = (c: Chat): Chat => {
+      if (c.id !== chatId) return c;
+      const updatedReqs = (c.joinRequests || []).filter(
+        (r) => r.id !== req.id && r.userId !== req.userId
+      );
+      const alreadyIn = (c.members || []).some((m) => m.userId === req.userId);
+      const newMember = {
+        userId: req.userId,
+        displayName: req.userName,
+        username: req.username,
+        avatarUrl: req.userAvatar,
+        role: 'member' as const
+      };
+      const nextMembers = alreadyIn ? c.members : [...(c.members || []), newMember];
+      return {
+        ...c,
+        joinRequests: updatedReqs,
+        members: nextMembers,
+        membersCount: nextMembers.length,
+        updatedAt: now
+      };
+    };
+
+    let approvedChatSnapshot: Chat | null = null;
+    setChats((prev) => {
+      const next = prev.map((c) => {
+        const updated = applyApproval(c);
+        if (updated.id === chatId) approvedChatSnapshot = updated;
+        return updated;
+      });
+      return next;
+    });
 
     setSelectedChat((prev) => {
       if (prev.id === chatId) {
-        const updatedReqs = (prev.joinRequests || []).filter((r) => r.id !== req.id);
-        const newMember = {
-          userId: req.userId,
-          displayName: req.userName,
-          username: req.username,
-          avatarUrl: req.userAvatar,
-          role: 'member' as const
-        };
-        return {
-          ...prev,
-          joinRequests: updatedReqs,
-          members: [...prev.members, newMember],
-          membersCount: prev.membersCount + 1
-        };
+        const updated = applyApproval(prev);
+        approvedChatSnapshot = updated;
+        return updated;
       }
       return prev;
+    });
+
+    setGlobalCatalogChats((prev) => {
+      const nextCatalog = prev.map(applyApproval);
+      savePlatformStateToCloud({ globalCatalogChats: nextCatalog });
+      return nextCatalog;
+    });
+
+    setUserChatsMap((prevMap) => {
+      const nextMap: Record<string, Chat[]> = {};
+      Object.keys(prevMap).forEach((uid) => {
+        nextMap[uid] = (prevMap[uid] || []).map(applyApproval);
+      });
+      if (req.userId && approvedChatSnapshot) {
+        const applicantChats = nextMap[req.userId] || [];
+        if (!applicantChats.some((c) => c.id === chatId)) {
+          nextMap[req.userId] = [approvedChatSnapshot, ...applicantChats];
+        }
+      }
+      savePlatformStateToCloud({ userChatsMap: nextMap });
+      return nextMap;
     });
 
     // Send announcement to chat
     const sysMsg: Message = {
-      id: 'msg_sys_join_' + Date.now(),
+      id: 'msg_sys_join_' + now,
       chatId: chatId,
+      topicId: selectedChat.topics?.[0]?.id,
       senderId: currentUser.id,
       senderName: currentUser.displayName,
       senderAvatar: currentUser.avatarUrl,
       type: 'text',
-      content: `🎉 ${req.userName} (@${req.username}) вступил(а) в группу по одобренной заявке.`,
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      content: `🎉 ${req.userName} (@${req.username}) принят(а) по заявке.`,
+      createdAt: new Date().toISOString(),
       status: 'read'
     };
 
-    setMessagesMap((prev) => ({
-      ...prev,
-      [chatId]: [...(prev[chatId] || []), sysMsg]
-    }));
+    setMessagesMap((prev) => {
+      const nextMsgs = {
+        ...prev,
+        [chatId]: [...(prev[chatId] || []), sysMsg]
+      };
+      savePlatformStateToCloud({ messagesMap: nextMsgs });
+      return nextMsgs;
+    });
   };
 
-  // Decline Join Request
+  // Decline Join Request (Владелец или модератор отклоняет заявку)
   const handleDeclineRequest = (chatId: string, reqId: string) => {
-    setChats((prev) =>
-      prev.map((c) => {
-        if (c.id === chatId) {
-          return {
-            ...c,
-            joinRequests: (c.joinRequests || []).filter((r) => r.id !== reqId)
-          };
-        }
-        return c;
-      })
-    );
+    const now = Date.now();
+    const removeReq = (c: Chat): Chat => {
+      if (c.id !== chatId) return c;
+      return {
+        ...c,
+        joinRequests: (c.joinRequests || []).filter((r) => r.id !== reqId && r.userId !== reqId),
+        updatedAt: now
+      };
+    };
 
-    setSelectedChat((prev) => {
-      if (prev.id === chatId) {
-        return {
-          ...prev,
-          joinRequests: (prev.joinRequests || []).filter((r) => r.id !== reqId)
-        };
-      }
-      return prev;
+    setChats((prev) => prev.map(removeReq));
+    setSelectedChat((prev) => (prev.id === chatId ? removeReq(prev) : prev));
+    setGlobalCatalogChats((prev) => {
+      const nextCatalog = prev.map(removeReq);
+      savePlatformStateToCloud({ globalCatalogChats: nextCatalog });
+      return nextCatalog;
+    });
+    setUserChatsMap((prevMap) => {
+      const nextMap: Record<string, Chat[]> = {};
+      Object.keys(prevMap).forEach((uid) => {
+        nextMap[uid] = (prevMap[uid] || []).map(removeReq);
+      });
+      savePlatformStateToCloud({ userChatsMap: nextMap });
+      return nextMap;
     });
   };
 
@@ -2562,10 +3040,13 @@ export default function App() {
   };
 
   const handleClearCallsHistory = () => {
+    const existingCallIds = calls.map((c) => c.id);
+    recordDeletedIds(existingCallIds, { clearCallsUserId: currentUser.id });
     setCalls([]);
   };
 
   const handleDeleteCall = (id: string) => {
+    recordDeletedIds([id]);
     setCalls((prev) => prev.filter((c) => c.id !== id));
   };
 
@@ -2648,6 +3129,7 @@ export default function App() {
         callId
       });
 
+      const targetIds = selectedContacts.map((c) => c.userId).filter(Boolean);
       publishCallSignalToCloud({
         type: 'CALL_OFFER',
         callId,
@@ -2655,6 +3137,7 @@ export default function App() {
         callerName: currentUser.displayName,
         callerUsername: currentUser.username,
         callerAvatar: currentUser.avatarUrl,
+        targetUserIds: targetIds,
         targetName: groupTitle,
         isVideo: Boolean(isVideo),
         timestamp: Date.now()
@@ -2672,13 +3155,39 @@ export default function App() {
     });
   };
 
-  // Direct phone number outgoing call
+  // Direct phone number outgoing call — звонит ТОЛЬКО пользователю с этим номером телефона
   const handleStartCallToNumber = (phoneNumber: string, isVideo = false) => {
+    const cleanDigits = phoneNumber.replace(/\D/g, '');
+    const matchedUser = allDirectoryUsers.find((u) => {
+      const uDigits = (u.phone || '').replace(/\D/g, '');
+      return uDigits.length >= 7 && cleanDigits.length >= 7 && uDigits.slice(-10) === cleanDigits.slice(-10);
+    });
+    const callId = 'call_' + Date.now();
     setActiveCallSession({
       direction: 'outgoing',
-      contactName: phoneNumber,
-      avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(phoneNumber)}&backgroundColor=182533`,
-      isVideo
+      contactName: matchedUser ? matchedUser.displayName : phoneNumber,
+      avatarUrl: matchedUser
+        ? matchedUser.avatarUrl
+        : `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(phoneNumber)}&backgroundColor=182533`,
+      isVideo,
+      callId,
+      targetUserId: matchedUser?.id,
+      targetUsername: matchedUser?.username
+    });
+
+    publishCallSignalToCloud({
+      type: 'CALL_OFFER',
+      callId,
+      callerId: currentUser.id,
+      callerName: currentUser.displayName,
+      callerUsername: currentUser.username,
+      callerAvatar: currentUser.avatarUrl,
+      targetUserId: matchedUser?.id,
+      targetUsername: matchedUser?.username,
+      targetPhone: phoneNumber,
+      targetName: matchedUser ? matchedUser.displayName : phoneNumber,
+      isVideo: Boolean(isVideo),
+      timestamp: Date.now()
     });
   };
 
@@ -2986,7 +3495,7 @@ export default function App() {
               onOpenMainMenu={() => setIsMainMenuOpen(true)}
               onOpenQRScanner={() => setIsQRScannerOpen(true)}
               onOpenPlusMenu={() => setIsPlusMenuOpen(true)}
-              allUsers={savedAccounts}
+              allUsers={allDirectoryUsers}
               globalCatalogChats={globalCatalogChats}
               communities={communities}
               followingUserIds={followingUserIds}
@@ -3064,36 +3573,32 @@ export default function App() {
               }}
             />
 
-            {/* Central Book Hinge (Шарнир раскладушки-книжки iPhone Duo) */}
-            <div
-              className={`${
-                deviceViewMode === 'duo'
-                  ? 'flex'
-                  : deviceViewMode === 'folded'
-                  ? 'hidden'
-                  : 'hidden min-[620px]:max-lg:flex'
-              } w-3 sm:w-3.5 bg-gradient-to-r from-[#09090b] via-[#27272a] to-[#09090b] border-x border-[#3f3f46]/60 flex-col items-center justify-between py-6 shrink-0 z-30 select-none shadow-[0_0_20px_rgba(0,0,0,0.9)] relative`}
-              title="Шарнир раскладушки iPhone Duo (Книжка 2 экрана)"
-            >
-              {/* Upper Hinge Cap */}
-              <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
-
-              {/* Center Interactive Fold/Unfold Button */}
-              <button
-                onClick={handleCycleDeviceMode}
-                className="w-5 h-16 -mx-1 rounded-full bg-[#18181b] hover:bg-[#0077FF] text-[#a1a1aa] hover:text-white border border-[#3f3f46] hover:border-[#71aaeb] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer shadow-lg group"
-                title="Переключить режим раскладушки: Книжка Duo (2 экрана) / Сложенный 1 экран / Авто"
+            {/* Central Book Hinge — only displayed when user explicitly turns on Duo mode and is in groups/channels/communities */}
+            {deviceViewMode === 'duo' && (
+              <div
+                className="w-3 sm:w-3.5 bg-gradient-to-r from-[#09090b] via-[#27272a] to-[#09090b] border-x border-[#3f3f46]/60 flex-col items-center justify-between py-6 shrink-0 z-30 select-none shadow-[0_0_20px_rgba(0,0,0,0.9)] relative flex"
+                title="Шарнир раскладушки iPhone Duo (Книжка 2 экрана)"
               >
-                <span className="w-1 h-1 rounded-full bg-current opacity-70" />
-                <span className="text-[8px] font-black tracking-tighter [writing-mode:vertical-rl] rotate-180 uppercase">
-                  DUO
-                </span>
-                <span className="w-1 h-1 rounded-full bg-current opacity-70" />
-              </button>
+                {/* Upper Hinge Cap */}
+                <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
 
-              {/* Lower Hinge Cap */}
-              <div className="w-1.5 h-8 rounded-full bg-gradient-to-t from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
-            </div>
+                {/* Center Interactive Fold/Unfold Button */}
+                <button
+                  onClick={handleCycleDeviceMode}
+                  className="w-5 h-16 -mx-1 rounded-full bg-[#18181b] hover:bg-[#0077FF] text-[#a1a1aa] hover:text-white border border-[#3f3f46] hover:border-[#71aaeb] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer shadow-lg group"
+                  title="Переключить режим раскладушки: Книжка Duo (2 экрана) / Сложенный 1 экран / Авто"
+                >
+                  <span className="w-1 h-1 rounded-full bg-current opacity-70" />
+                  <span className="text-[8px] font-black tracking-tighter [writing-mode:vertical-rl] rotate-180 uppercase">
+                    DUO
+                  </span>
+                  <span className="w-1 h-1 rounded-full bg-current opacity-70" />
+                </button>
+
+                {/* Lower Hinge Cap */}
+                <div className="w-1.5 h-8 rounded-full bg-gradient-to-t from-[#52525b] to-[#27272a] border border-white/10 shadow-inner" />
+              </div>
+            )}
 
             <div
               className={`flex-1 min-w-0 min-h-0 h-full w-full overflow-hidden flex flex-col ${
@@ -3112,13 +3617,36 @@ export default function App() {
                 chat={selectedChat}
                 messages={messagesMap[selectedChat.id] || []}
                 currentUser={currentUser}
-                savedAccounts={savedAccounts}
+                savedAccounts={allDirectoryUsers}
                 onlinePeerMap={onlinePeerMap}
                 onBackMobile={() => setIsMobileChatOpen(false)}
                 onSendMessage={handleSendMessage}
                 onStartCall={(isVideo) => {
                   const isGroup = selectedChat.type === 'group' || selectedChat.type === 'channel';
-                  const otherMember = selectedChat.members?.find((m) => m.userId !== currentUser.id);
+                  const otherMember =
+                    selectedChat.members?.find((m) => m.userId !== currentUser.id) ||
+                    (() => {
+                      const matched = allDirectoryUsers.find(
+                        (u) =>
+                          u.id !== currentUser.id &&
+                          (u.displayName.toLowerCase() === selectedChat.title.toLowerCase() ||
+                            u.username.toLowerCase() === selectedChat.title.replace(/^@/, '').toLowerCase())
+                      );
+                      return matched
+                        ? {
+                            userId: matched.id,
+                            displayName: matched.displayName,
+                            username: matched.username,
+                            avatarUrl: matched.avatarUrl,
+                            role: 'member' as const
+                          }
+                        : undefined;
+                    })();
+                  const groupTargetIds = isGroup
+                    ? (selectedChat.members || [])
+                        .map((m) => m.userId)
+                        .filter((uid) => Boolean(uid) && uid !== currentUser.id)
+                    : undefined;
                   const callId = 'call_' + Date.now();
                   setActiveCallSession({
                     direction: 'outgoing',
@@ -3126,8 +3654,8 @@ export default function App() {
                     avatarUrl: selectedChat.avatarUrl,
                     isVideo,
                     callId,
-                    targetUserId: otherMember?.userId,
-                    targetUsername: otherMember?.username,
+                    targetUserId: !isGroup ? otherMember?.userId : undefined,
+                    targetUsername: !isGroup ? otherMember?.username : undefined,
                     isGroupCall: isGroup,
                     groupMembers: selectedChat.members || []
                   });
@@ -3143,8 +3671,9 @@ export default function App() {
                         callId,
                         callerId: currentUser.id,
                         callerUsername: currentUser.username,
-                        targetUserId: otherMember?.userId,
-                        targetUsername: otherMember?.username
+                        targetUserId: !isGroup ? otherMember?.userId : undefined,
+                        targetUsername: !isGroup ? otherMember?.username : undefined,
+                        targetUserIds: groupTargetIds
                       });
                       channel.close();
                     }
@@ -3157,8 +3686,9 @@ export default function App() {
                     callerName: currentUser.displayName,
                     callerUsername: currentUser.username,
                     callerAvatar: currentUser.avatarUrl,
-                    targetUserId: otherMember?.userId,
-                    targetUsername: otherMember?.username,
+                    targetUserId: !isGroup ? otherMember?.userId : undefined,
+                    targetUsername: !isGroup ? otherMember?.username : undefined,
+                    targetUserIds: groupTargetIds,
                     targetName: selectedChat.title,
                     isVideo: Boolean(isVideo),
                     timestamp: Date.now()
@@ -3226,8 +3756,13 @@ export default function App() {
             chats={chats}
             communities={communities}
             currentUserId={currentUser.id}
+            currentUser={currentUser}
             initialFeedTab={postsInitialTab}
-            onSelectCommunity={(comm) => setSelectedCommunity(comm)}
+            onSelectCommunity={(comm, initialTab) => {
+              setSelectedCommunityInitialTab(initialTab);
+              setSelectedCommunity(comm);
+            }}
+            onUpdateCommunity={handleUpdateCommunity}
             onOpenCreateCommunity={() => {
               setCreateChatDefaultType('community');
               setIsCreateChatOpen(true);
@@ -3247,6 +3782,8 @@ export default function App() {
             onToggleLikePost={handleToggleLikePost}
             onDeleteComment={handleDeleteComment}
             onAddComment={handleAddPostComment}
+            onDeletePost={handleDeletePost}
+            onPublishPost={handlePublishPost}
             onRefreshFeed={handleRefreshPostsFeed}
             refreshCount={feedRefreshCount}
           />
@@ -3256,7 +3793,7 @@ export default function App() {
         {activeScreen === 'profile' && (
           <UserProfileView
             currentUser={currentUser}
-            savedAccounts={savedAccounts}
+            savedAccounts={allDirectoryUsers}
             targetUser={selectedOtherUser}
             isFollowing={selectedOtherUser ? !!followingUserIds[selectedOtherUser.id] : false}
             onToggleFollow={handleToggleFollow}
@@ -3459,6 +3996,30 @@ export default function App() {
               <ChevronRight className="w-4 h-4 text-[#71aaeb] group-hover:translate-x-0.5 transition" />
             </div>
 
+            {/* Блок «Добавить человека / Ссылка / QR-код» (по запросу пользователя в кнопке «Ещё») */}
+            <div
+              onClick={() => {
+                setIsMoreMenuOpen(false);
+                setIsInviteFromMoreOpen(true);
+              }}
+              className="p-3.5 rounded-xl bg-[#252528] hover:bg-[#2c2d30] border border-[#0077FF]/45 hover:border-[#0077FF] transition-all cursor-pointer flex items-center justify-between group active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#0077FF]/20 text-[#71aaeb] flex items-center justify-center shrink-0">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <span className="font-bold text-sm text-white group-hover:text-[#71aaeb] transition block">
+                    Добавить человека
+                  </span>
+                  <p className="text-[11px] text-[#939393] mt-0.5 line-clamp-1">
+                    Пригласить человека, дать приватную ссылку или QR-код
+                  </p>
+                </div>
+              </div>
+              <QrCode className="w-4 h-4 text-[#71aaeb]" />
+            </div>
+
             {/* Сетка остальных быстрых действий */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               {/* Поиск */}
@@ -3582,8 +4143,9 @@ export default function App() {
         onClose={() => setIsGlobalSearchOpen(false)}
         initialQuery={globalSearchInitialQuery}
         currentUser={currentUser}
-        allUsers={savedAccounts}
+        allUsers={allDirectoryUsers}
         chats={chats}
+        userChatsMap={userChatsMap}
         globalCatalogChats={globalCatalogChats}
         communities={communities}
         posts={posts}
@@ -3633,7 +4195,7 @@ export default function App() {
         onStartCallToNumber={handleStartCallToNumber}
         onSimulateIncomingCall={handleSimulateIncomingCall}
         onOpenHistory={() => setIsCallHistoryOpen(true)}
-        savedAccounts={savedAccounts}
+        savedAccounts={allDirectoryUsers}
         currentUserId={currentUser.id}
       />
 
@@ -3670,7 +4232,7 @@ export default function App() {
       {isSettingsOpen && (
         <SettingsModal
           user={currentUser}
-          savedAccounts={savedAccounts}
+          savedAccounts={myDeviceAccounts}
           initialTab={settingsInitialTab}
           onUpdateUser={handleUpdateUser}
           onUpdateUserPin={handleUpdateCurrentUserPin}
@@ -3716,11 +4278,19 @@ export default function App() {
 
       {/* Community View & Management Modal */}
       <CommunityViewModal
-        community={selectedCommunity}
+        community={
+          selectedCommunity
+            ? communities.find((c) => c.id === selectedCommunity.id) || selectedCommunity
+            : null
+        }
         currentUser={currentUser}
         chats={chats}
         posts={posts}
-        onClose={() => setSelectedCommunity(null)}
+        initialCommunityTab={selectedCommunityInitialTab}
+        onClose={() => {
+          setSelectedCommunity(null);
+          setSelectedCommunityInitialTab(undefined);
+        }}
         onUpdateCommunity={handleUpdateCommunity}
         onPublishCommunityPost={handlePublishCommunityPost}
         onSelectChat={(chat) => {
@@ -3738,6 +4308,41 @@ export default function App() {
         onToggleLikePost={handleToggleLikePost}
         onAddComment={handleAddPostComment}
         onDeleteComment={handleDeleteComment}
+        onDeletePost={handleDeletePost}
+      />
+
+      {/* Invite / Add Person / Private Link / QR Modal opened from bottom 'Ещё' menu */}
+      <InviteAndQRModal
+        isOpen={isInviteFromMoreOpen}
+        chat={selectedChat}
+        allUsers={allDirectoryUsers}
+        currentUserId={currentUser.id}
+        onClose={() => setIsInviteFromMoreOpen(false)}
+        onAddMemberToChat={(chatId, targetUser) => {
+          setChats((prev) =>
+            prev.map((c) => {
+              if (c.id !== chatId) return c;
+              const currentMembers = c.members || [];
+              if (currentMembers.some((m) => m.userId === targetUser.id)) return c;
+              const nextMembers = [
+                ...currentMembers,
+                {
+                  userId: targetUser.id,
+                  displayName: targetUser.displayName,
+                  username: targetUser.username,
+                  avatarUrl: targetUser.avatarUrl,
+                  role: 'member' as const
+                }
+              ];
+              return {
+                ...c,
+                members: nextMembers,
+                membersCount: Math.max((c.membersCount || 1) + 1, nextMembers.length)
+              };
+            })
+          );
+          triggerToast(`✅ Пользователь ${targetUser.displayName} добавлен в «${selectedChat.title}»`);
+        }}
       />
 
       {/* Call History Modal (Зелёная = совершил звонок, Красная = пропустил звонок) */}
@@ -3769,7 +4374,7 @@ export default function App() {
       <MainMenuDrawer
         isOpen={isMainMenuOpen}
         currentUser={currentUser}
-        savedAccounts={savedAccounts}
+        savedAccounts={myDeviceAccounts}
         missedCallsCount={missedCallsCount}
         onClose={() => setIsMainMenuOpen(false)}
         onOpenContacts={() => setIsContactsOpen(true)}
@@ -3799,7 +4404,8 @@ export default function App() {
         isOpen={isAuthModalOpen || !isLoggedIn}
         isLoggedIn={isLoggedIn}
         lastUser={lastLoggedUser}
-        savedAccounts={savedAccounts}
+        savedAccounts={myDeviceAccounts}
+        serverUsers={globalServerUsers}
         onRemoveSavedAccount={(accId) => {
           setSavedAccounts((prev) => prev.filter((a) => a.id !== accId));
         }}
@@ -3830,7 +4436,7 @@ export default function App() {
       <ContactsModal
         isOpen={isContactsOpen}
         onClose={() => setIsContactsOpen(false)}
-        savedAccounts={savedAccounts}
+        savedAccounts={allDirectoryUsers}
         currentUserId={currentUser.id}
         onStartDirectChat={(contact) => {
           setIsContactsOpen(false);
