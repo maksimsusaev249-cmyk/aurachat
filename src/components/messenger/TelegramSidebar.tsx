@@ -296,7 +296,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
         : 'w-full min-[620px]:w-[44%] md:w-72 lg:w-80 xl:w-96'
     }`}>
       {/* Top Header & Search (VKontakte & Telegram Clean Mobile/Desktop/Foldable Header) */}
-      <div className="px-3 pt-2.5 pb-2.5 bg-[#222222] border-b border-[#2e2e2e] flex flex-col gap-2 w-full min-w-0">
+      <div className="px-3 pt-2.5 pb-2.5 bg-[#222222] border-b border-[#2e2e2e] flex flex-col gap-2 w-full min-w-0 shrink-0">
         {/* Row 1: Menu, Title & Action Buttons */}
         <div className="flex items-center justify-between gap-1.5 w-full">
           <div className="flex items-center gap-1.5 min-w-0">

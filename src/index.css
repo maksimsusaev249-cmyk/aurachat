@@ -108,16 +108,25 @@ button, input, select, textarea, div {
   }
 }
 
-/* Momentum scrolling and touch handling on mobile devices */
-.overflow-y-auto, .overflow-x-auto {
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+/* Momentum scrolling and touch handling on mobile devices (iPhone 6s through iPhone 18 Pro Max & Android) */
+.overflow-y-auto,
+.overflow-y-scroll,
+[class*="overflow-y-auto"] {
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  overscroll-behavior-y: contain;
 }
-.overflow-y-auto::-webkit-scrollbar, .overflow-x-auto::-webkit-scrollbar {
-  width: 0px;
-  height: 0px;
-  display: none;
+
+.overflow-x-auto,
+.overflow-x-scroll,
+[class*="overflow-x-auto"] {
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-x !important;
+}
+
+.overflow-y-auto *,
+.overflow-y-scroll * {
+  touch-action: pan-y;
 }
 
 /* Prevent horizontal shift or overflow on iPhone 6s through iPhone 18 */
@@ -128,3 +137,4 @@ html, body, #root {
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
 }
+
