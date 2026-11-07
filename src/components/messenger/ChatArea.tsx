@@ -3008,18 +3008,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveStickerPackFromCollection(viewingPackModal.pack)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40"
-                  title="Нажмите, чтобы удалить этот пак из своей подборки"
+                  className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-200 shadow-lg bg-[#143126] hover:bg-rose-950/80 text-emerald-400 hover:text-rose-300 border border-emerald-500/50 hover:border-rose-500/60 group"
+                  title="Нажмите, чтобы удалить этот пак из своей подборки (кнопка переключится на «Установить»)"
                 >
-                  <Trash2 className="w-4 h-4 text-rose-400" />
-                  <span>Удалить из подборки</span>
+                  <span className="group-hover:hidden flex items-center gap-1.5">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>Уже в вашей подборке</span>
+                  </span>
+                  <span className="hidden group-hover:flex items-center gap-1.5">
+                    <Trash2 className="w-4 h-4 text-rose-400" />
+                    <span>Удалить из подборки</span>
+                  </span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => handleSaveStickerPackToCollection(viewingPackModal.pack)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-lg bg-[#0077FF] hover:bg-[#0066DD] text-white"
-                  title="Установить этот пак стикеров себе"
+                  className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-lg bg-[#0077FF] hover:bg-[#0066DD] text-white"
+                  title="Установить этот пак стикеров в свою подборку"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Установить</span>

@@ -26,7 +26,9 @@ import {
   Monitor,
   ScreenShare,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Move,
+  EyeOff
 } from 'lucide-react';
 import {
   startOutgoingDialTone,
@@ -161,6 +163,20 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState<boolean>(false);
   const [screenFitMode, setScreenFitMode] = useState<'contain' | 'cover'>('contain');
+
+  // Floating Speaker Webcam Bubble during Screen Share («Кружок веб-камеры спикера»)
+  const [speakerBubbleCorner, setSpeakerBubbleCorner] = useState<'bottom-right' | 'top-right' | 'bottom-left' | 'top-left'>('bottom-right');
+  const [isSpeakerBubbleMinimized, setIsSpeakerBubbleMinimized] = useState<boolean>(false);
+
+  const handleCycleSpeakerCorner = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSpeakerBubbleCorner((prev) => {
+      if (prev === 'bottom-right') return 'bottom-left';
+      if (prev === 'bottom-left') return 'top-left';
+      if (prev === 'top-left') return 'top-right';
+      return 'bottom-right';
+    });
+  };
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState<boolean>(false);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
@@ -1083,7 +1099,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
       localVideoRef.current.srcObject = localStreamRef.current;
       localVideoRef.current.play().catch(() => {});
     }
-  }, [callStatus, isVideoEnabled, micConnected, cameraConnected, facingMode]);
+  }, [callStatus, isVideoEnabled, micConnected, cameraConnected, facingMode, isScreenSharing, isSpeakerBubbleMinimized]);
 
   // Attach screen share stream to video element
   useEffect(() => {
@@ -1459,7 +1475,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
           {isScreenSharing || isRemoteScreenSharing ? (
             /* Live Screen Share Stream — Полный обзор экрана с управлением масштабом и участниками */
-            <div className="relative w-full h-full bg-[#05070a] flex items-center justify-center overflow-hidden">
+            <div className="relative w-full h-full bg-[#05070a] flex items-center justify-center overflow-hidden group">
               <video
                 ref={isScreenSharing ? screenVideoRef : remoteVideoRef}
                 autoPlay
@@ -1479,8 +1495,8 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                 />
               )}
 
-              {/* Верхняя панель управления демонстрацией экрана */}
-              <div className="absolute top-4 sm:top-6 left-4 right-4 flex items-center justify-between gap-2 z-30 pointer-events-auto">
+              {/* Верхняя панель управления демонстрацией экрана (скрывается, чтобы не перекрывать экран, появляется при наведении мыши) */}
+              <div className="absolute top-3 sm:top-5 left-4 right-4 flex items-center justify-between gap-2 z-30 pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div className="px-3 py-1.5 rounded-xl bg-[#0077FF]/90 backdrop-blur-md text-xs font-semibold text-white border border-sky-400/40 flex items-center gap-2 shadow-xl">
                   <Monitor className="w-4 h-4 text-sky-200 animate-pulse" />
                   <span className="truncate">
@@ -1603,8 +1619,8 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
           )}
         </div>
 
-        {/* PiP Corner Video (Shown when BOTH local and remote video/streams are active) */}
-        {((isVideoEnabled && remoteVideoEnabled) || (isRemoteScreenSharing && isVideoEnabled)) && (
+        {/* PiP Corner Video (Shown only when BOTH camera videos are active and NO screen sharing is occurring) */}
+        {!isScreenSharing && !isRemoteScreenSharing && isVideoEnabled && remoteVideoEnabled && (
           <div
             onClick={handleSwapCameras}
             className="absolute top-16 right-4 z-20 w-28 h-40 md:w-44 md:h-64 rounded-2xl overflow-hidden border-2 border-amber-400/80 shadow-2xl bg-black group cursor-pointer transition hover:scale-105"
@@ -1644,12 +1660,118 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
           </div>
         )}
 
-        {/* Top Header: Security, Audio Route, Sound & Desktop Fullscreen Toggle */}
-        <div className="relative z-10 pt-1 flex flex-col items-center">
-          <div className="w-full flex items-center justify-between mb-2 gap-1.5 flex-wrap">
-            
-            {/* Audio Route Selector (ГРОМКАЯ СВЯЗЬ / BLUETOOTH / ДИНАМИК) */}
-            <div className="relative">
+        {/* Floating Speaker Webcam Bubble (Показывается, когда включена демонстрация экрана И включена камера) */}
+        {(isScreenSharing || isRemoteScreenSharing) && (isVideoEnabled || remoteVideoEnabled) && (
+          isSpeakerBubbleMinimized ? (
+            <button
+              type="button"
+              onClick={() => setIsSpeakerBubbleMinimized(false)}
+              className={`absolute z-30 ${
+                speakerBubbleCorner === 'bottom-right'
+                  ? 'bottom-24 sm:bottom-28 right-4'
+                  : speakerBubbleCorner === 'top-right'
+                  ? 'top-14 sm:top-16 right-4'
+                  : speakerBubbleCorner === 'bottom-left'
+                  ? 'bottom-24 sm:bottom-28 left-4'
+                  : 'top-14 sm:top-16 left-4'
+              } px-3 py-1.5 rounded-full bg-black/85 border border-[#0077FF]/60 text-white text-xs font-semibold flex items-center gap-1.5 shadow-2xl backdrop-blur-md hover:bg-black transition cursor-pointer`}
+              title="Развернуть веб-камеру спикера"
+            >
+              <Video className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Камера ({isVideoEnabled ? 'Вы' : session.contactName})</span>
+            </button>
+          ) : (
+            <div
+              className={`absolute z-30 ${
+                speakerBubbleCorner === 'bottom-right'
+                  ? 'bottom-24 sm:bottom-28 right-4'
+                  : speakerBubbleCorner === 'top-right'
+                  ? 'top-14 sm:top-16 right-4'
+                  : speakerBubbleCorner === 'bottom-left'
+                  ? 'bottom-24 sm:bottom-28 left-4'
+                  : 'top-14 sm:top-16 left-4'
+              } w-28 h-28 sm:w-36 sm:h-36 rounded-full overflow-hidden border-2 border-[#0077FF] shadow-2xl ring-4 ring-black/70 bg-black group transition-all duration-200 hover:scale-105`}
+              title="Веб-камера спикера при демонстрации экрана"
+            >
+              {isVideoEnabled ? (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover -scale-x-100"
+                />
+              ) : (
+                <div className="relative w-full h-full">
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                  {remoteFrameDataUrl && !hasNativeRemoteVideo && (
+                    <img
+                      src={remoteFrameDataUrl}
+                      alt={session.contactName}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Speaker Label */}
+              <div className="absolute bottom-1.5 inset-x-0 flex justify-center pointer-events-none">
+                <span className="px-2 py-0.5 rounded-full bg-black/80 text-[9px] font-bold text-white backdrop-blur-sm truncate max-w-[85%] border border-white/10 shadow">
+                  {isVideoEnabled ? 'Вы' : session.contactName}
+                </span>
+              </div>
+
+              {/* Action Controls on Hover */}
+              <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleCycleSpeakerCorner}
+                  className="p-1.5 rounded-full bg-black/80 hover:bg-[#0077FF] text-white transition cursor-pointer shadow"
+                  title="Переместить камеру в другой угол экрана"
+                >
+                  <Move className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleFacingMode();
+                  }}
+                  className="p-1.5 rounded-full bg-black/80 hover:bg-[#0077FF] text-white transition cursor-pointer shadow"
+                  title="Переключить камеру (фронтальная / задняя)"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsSpeakerBubbleMinimized(true);
+                  }}
+                  className="p-1.5 rounded-full bg-black/80 hover:bg-rose-600 text-white transition cursor-pointer shadow"
+                  title="Свернуть кружок камеры"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Top Header: Security, Audio Route, Sound & Desktop Fullscreen Toggle — HIDDEN during Screen Sharing */}
+        {!isScreenSharing && !isRemoteScreenSharing && (
+          <div className="relative z-10 pt-1 flex flex-col items-center">
+            <div className="w-full flex items-center justify-between mb-2 gap-1.5 flex-wrap">
+              
+              {/* Audio Route Selector (ГРОМКАЯ СВЯЗЬ / BLUETOOTH / ДИНАМИК) */}
+              <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowAudioRouteMenu(!showAudioRouteMenu)}
@@ -1830,6 +1952,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {/* QUICK RINGTONE & MICROPHONE CONFIG PANEL */}
         {showSoundConfig && (
@@ -1942,7 +2065,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
         <div className="relative z-10 my-auto flex flex-col items-center">
 
           {/* 1. Ringing or Connected Mode: Show Center Avatar ONLY when camera and screen share are OFF */}
-          {(callStatus === 'ringing' || callStatus === 'connected') && !isVideoEnabled && !remoteVideoEnabled && !isScreenSharing && (
+          {(callStatus === 'ringing' || callStatus === 'connected') && !isVideoEnabled && !remoteVideoEnabled && !isScreenSharing && !isRemoteScreenSharing && (
             <div className="flex flex-col items-center">
               <div className="relative">
                 <img
