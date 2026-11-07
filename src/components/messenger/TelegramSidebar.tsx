@@ -68,6 +68,7 @@ interface TelegramSidebarProps {
   }) => void;
   onJoinGlobalChat?: (chat: Chat) => void;
   onSelectCommunity?: (comm: Community) => void;
+  isSimpleMode?: boolean;
   onOpenUserProfile?: (user: {
     id: string;
     name: string;
@@ -108,6 +109,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
   onStartDirectChatWithUser,
   onJoinGlobalChat,
   onSelectCommunity,
+  isSimpleMode = false,
   onOpenUserProfile,
   onOpenGlobalSearch
 }) => {
@@ -305,8 +307,18 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             >
               <Menu className="w-5 h-5 text-[#71aaeb]" />
             </button>
-            <h2 className="font-bold text-base text-white tracking-tight truncate">
-              Чаты
+            <h2 className="font-bold text-base text-white tracking-tight truncate flex items-center gap-2">
+              <span>Чаты</span>
+              {isSimpleMode && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="text-amber-400/90 text-[11px] font-normal hover:underline cursor-pointer transition shrink-0"
+                  title="Активен Простой режим (нажмите, чтобы открыть настройки)"
+                >
+                  <span>⚡ простой</span>
+                </button>
+              )}
             </h2>
           </div>
 
@@ -377,19 +389,21 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             <button
               onClick={onOpenPlusMenu || onOpenStudio || onAddStory}
               className="p-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
-              title="Создать пост, историю, новый чат или сообщество"
+              title={isSimpleMode ? "Создать группу или канал" : "Создать пост, историю, новый чат или сообщество"}
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
             </button>
 
-            {/* Tech Specs Modal Button */}
-            <button
-              onClick={onOpenTechSpecs}
-              className={`${isPhoneMode || deviceViewMode !== 'auto' ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
-              title="Архитектура, SQL DDL и Бэкенд код"
-            >
-              <FileText className="w-4 h-4" />
-            </button>
+            {/* Tech Specs Modal Button (Hidden in Simple Mode) */}
+            {!isSimpleMode && (
+              <button
+                onClick={onOpenTechSpecs}
+                className={`${isPhoneMode || deviceViewMode !== 'auto' ? 'hidden' : 'hidden sm:flex'} p-1.5 rounded-lg text-[#71aaeb] hover:text-white hover:bg-[#2c2d2e] transition items-center gap-1 cursor-pointer shrink-0`}
+                title="Архитектура, SQL DDL и Бэкенд код"
+              >
+                <FileText className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -427,53 +441,55 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
         </div>
       </div>
 
-      {/* Stories Tray */}
-      <div className="px-3 py-2.5 bg-[#222222] border-b border-[#2e2e2e]">
-        <div className="flex items-center justify-between mb-2 text-[11px] text-[#828282] font-medium">
-          <span className="flex items-center gap-1.5 text-[#e1e3e6] font-semibold">
-            Истории
-          </span>
-          <button
-            onClick={onOpenStudio || onAddStory}
-            className="text-[11px] text-[#71aaeb] hover:underline flex items-center gap-1 transition cursor-pointer font-medium"
-          >
-            <Camera className="w-3 h-3" /> Создать историю
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
-          <div
-            onClick={onOpenStudio || onAddStory}
-            className="flex flex-col items-center gap-1 cursor-pointer shrink-0"
-          >
-            <div className="w-12 h-12 rounded-full border-2 border-dashed border-[#0077FF] p-0.5 flex items-center justify-center bg-[#2c2d2e] hover:bg-[#363738] transition">
-              <Plus className="w-5 h-5 text-[#0077FF]" />
-            </div>
-            <span className="text-[10px] text-[#939393] truncate max-w-[56px]">История</span>
+      {/* Stories Tray — Hidden in Simple Mode */}
+      {!isSimpleMode && (
+        <div className="px-3 py-2.5 bg-[#222222] border-b border-[#2e2e2e]">
+          <div className="flex items-center justify-between mb-2 text-[11px] text-[#828282] font-medium">
+            <span className="flex items-center gap-1.5 text-[#e1e3e6] font-semibold">
+              Истории
+            </span>
+            <button
+              onClick={onOpenStudio || onAddStory}
+              className="text-[11px] text-[#71aaeb] hover:underline flex items-center gap-1 transition cursor-pointer font-medium"
+            >
+              <Camera className="w-3 h-3" /> Создать историю
+            </button>
           </div>
 
-          {visibleStories.map((st) => (
+          <div className="flex items-center gap-3 overflow-x-auto pb-1 scrollbar-none">
             <div
-              key={st.id}
-              onClick={() => onOpenStory(st)}
+              onClick={onOpenStudio || onAddStory}
               className="flex flex-col items-center gap-1 cursor-pointer shrink-0"
             >
-              <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#0077FF] to-[#71aaeb]">
-                <div className="p-0.5 rounded-full bg-[#222222]">
-                  <img
-                    src={st.userAvatar}
-                    alt={st.userName}
-                    className="w-11 h-11 rounded-full object-cover"
-                  />
-                </div>
+              <div className="w-12 h-12 rounded-full border-2 border-dashed border-[#0077FF] p-0.5 flex items-center justify-center bg-[#2c2d2e] hover:bg-[#363738] transition">
+                <Plus className="w-5 h-5 text-[#0077FF]" />
               </div>
-              <span className="text-[10px] text-[#e1e3e6] truncate max-w-[58px]">
-                {st.userId === currentUser.id ? 'Моя' : st.userName.split(' ')[0]}
-              </span>
+              <span className="text-[10px] text-[#939393] truncate max-w-[56px]">История</span>
             </div>
-          ))}
+
+            {visibleStories.map((st) => (
+              <div
+                key={st.id}
+                onClick={() => onOpenStory(st)}
+                className="flex flex-col items-center gap-1 cursor-pointer shrink-0"
+              >
+                <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#0077FF] to-[#71aaeb]">
+                  <div className="p-0.5 rounded-full bg-[#222222]">
+                    <img
+                      src={st.userAvatar}
+                      alt={st.userName}
+                      className="w-11 h-11 rounded-full object-cover"
+                    />
+                  </div>
+                </div>
+                <span className="text-[10px] text-[#e1e3e6] truncate max-w-[58px]">
+                  {st.userId === currentUser.id ? 'Моя' : st.userName.split(' ')[0]}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Folders Navigation Bar (VK Messenger Tabs) */}
       <div className="flex items-center px-2 border-b border-[#2e2e2e] bg-[#222222] text-xs font-medium overflow-x-auto scrollbar-none whitespace-nowrap">

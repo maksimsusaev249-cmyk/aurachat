@@ -27,7 +27,8 @@ import {
   Camera,
   Share2,
   Pencil,
-  Bookmark
+  Bookmark,
+  Zap
 } from 'lucide-react';
 import { playReactionSound } from '../../utils/audioUtils';
 
@@ -38,6 +39,8 @@ interface MainMenuDrawerProps {
   currentUser: User;
   savedAccounts?: User[];
   missedCallsCount?: number;
+  isSimpleMode?: boolean;
+  onToggleSimpleMode?: (enabled: boolean) => void;
   onClose: () => void;
   onOpenContacts: () => void;
   onOpenCallsHistory?: () => void;
@@ -56,6 +59,8 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
   currentUser,
   savedAccounts = [],
   missedCallsCount = 0,
+  isSimpleMode = false,
+  onToggleSimpleMode,
   onClose,
   onOpenContacts,
   onOpenCallsHistory,
@@ -373,6 +378,50 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
             </div>
             <ChevronRight className="w-4 h-4 text-[#828282]" />
           </button>
+
+          {/* Простой режим / Обычный режим (Тумблер) */}
+          <div
+            onClick={() => {
+              if (onToggleSimpleMode) {
+                playReactionSound();
+                onToggleSimpleMode(!isSimpleMode);
+              } else {
+                onOpenSettings('app_mode');
+                onClose();
+              }
+            }}
+            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#2c2d2e] transition cursor-pointer text-[#e1e3e6] group"
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                isSimpleMode ? 'bg-amber-500/20 text-amber-400' : 'bg-[#2c2d2e] text-[#828282]'
+              }`}>
+                <Zap className="w-4 h-4" />
+              </div>
+              <div className="text-left min-w-0">
+                <div className="font-semibold text-sm flex items-center gap-1.5">
+                  <span>Простой режим</span>
+                  {isSimpleMode && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      ВКЛ
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-[#828282] truncate">
+                  {isSimpleMode ? 'Только контакты, чаты и звонки' : 'Обычный режим с лентой и соцсетью'}
+                </div>
+              </div>
+            </div>
+
+            {/* iOS style toggle switch */}
+            <div className={`w-11 h-6 rounded-full transition-colors relative shrink-0 p-0.5 cursor-pointer ml-2 ${
+              isSimpleMode ? 'bg-amber-500' : 'bg-[#3a3a3c]'
+            }`}>
+              <div className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
+                isSimpleMode ? 'translate-x-5' : 'translate-x-0'
+              }`} />
+            </div>
+          </div>
 
           {/* Настройки */}
           <button

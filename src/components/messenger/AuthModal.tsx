@@ -218,7 +218,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     });
 
     if (existingUser) {
-      onLogin(existingUser);
+      if (existingUser.pinCode && existingUser.pinCode.length >= 4) {
+        setPendingLoginUser(existingUser);
+        setLoginPinInput('');
+        setFormError('');
+        setView('login_pin');
+      } else {
+        onLogin(existingUser);
+      }
     } else {
       const last4Digits = cleanTarget.replace(/\D/g, '').slice(-4) || String(Math.floor(1000 + Math.random() * 9000));
       // Create or sign in 1 phone/email = 1 account
@@ -573,7 +580,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     key={acc.id}
                     onClick={() => {
                       playSentSound();
-                      onLogin(acc);
+                      if (acc.pinCode && acc.pinCode.length >= 4) {
+                        setPendingLoginUser(acc);
+                        setLoginPinInput('');
+                        setFormError('');
+                        setView('login_pin');
+                      } else {
+                        onLogin(acc);
+                      }
                     }}
                     className="p-3.5 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#2b3c4f] hover:border-[#5288c1] flex items-center justify-between cursor-pointer transition shadow-md group"
                   >

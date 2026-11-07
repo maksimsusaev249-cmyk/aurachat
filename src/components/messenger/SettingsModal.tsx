@@ -48,7 +48,11 @@ import {
   History,
   FileText,
   Upload,
-  Music
+  Music,
+  Users,
+  MessageSquare,
+  Layers,
+  Zap
 } from 'lucide-react';
 import {
   playReactionSound,
@@ -68,6 +72,7 @@ export type SettingsTab =
   | 'profile' 
   | 'account'
   | 'password'
+  | 'app_mode'
   | 'answering_machine'
   | 'appearance'
   | 'language'
@@ -88,6 +93,8 @@ interface SettingsModalProps {
   user: User;
   savedAccounts?: User[];
   initialTab?: SettingsTab;
+  isSimpleMode?: boolean;
+  onToggleSimpleMode?: (enabled: boolean) => void;
   onUpdateUser: (updated: Partial<User>) => void;
   onUpdateUserPin?: (newPin: string) => void;
   onSwitchUser?: (newUser: User) => void;
@@ -100,6 +107,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   user,
   savedAccounts = [],
   initialTab = 'profile',
+  isSimpleMode: propIsSimpleMode,
+  onToggleSimpleMode,
   onUpdateUser,
   onUpdateUserPin,
   onSwitchUser,
@@ -121,6 +130,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [forgetAccountOnLogout, setForgetAccountOnLogout] = useState(false);
   const [showSwitchAccountList, setShowSwitchAccountList] = useState(initialTab === 'switch_account');
   
+  // App Mode (Простой режим / Обычный режим)
+  const [isSimpleMode, setIsSimpleMode] = useState<boolean>(() => {
+    if (typeof propIsSimpleMode === 'boolean') return propIsSimpleMode;
+    try {
+      return localStorage.getItem('aurachat_simple_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSimpleMode = (enabled: boolean) => {
+    setIsSimpleMode(enabled);
+    try {
+      localStorage.setItem('aurachat_simple_mode', String(enabled));
+    } catch {}
+    onToggleSimpleMode?.(enabled);
+    playReactionSound();
+  };
+
   // Password & PIN Management States
   const [passwordSubTab, setPasswordSubTab] = useState<'pin' | 'password'>('pin');
   
@@ -193,13 +221,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [callsAllowed, setCallsAllowed] = useState<'all' | 'contacts'>('all');
   const [groupAddPermission, setGroupAddPermission] = useState<'all' | 'friends' | 'contacts' | 'nobody'>('all');
 
-  // Folders State
-  const [folders, setFolders] = useState([
-    { id: 'f_all', name: 'Все чаты', icon: '💬', count: 12 },
-    { id: 'f_personal', name: 'Личные (ЛС)', icon: '👤', count: 5 },
-    { id: 'f_work', name: 'Работа & Проекты', icon: '💼', count: 4 },
-    { id: 'f_channels', name: 'Каналы & Медиа', icon: '📢', count: 3 }
-  ]);
+  // Folders State - persisted in user settings
+  const [folders, setFolders] = useState<any[]>(() => {
+    if ((user.settings as any)?.folders && Array.isArray((user.settings as any).folders) && (user.settings as any).folders.length > 0) {
+      return (user.settings as any).folders;
+    }
+    return [
+      { id: 'f_all', name: 'Все чаты', icon: '💬', count: 12 },
+      { id: 'f_personal', name: 'Личные (ЛС)', icon: '👤', count: 5 },
+      { id: 'f_work', name: 'Работа & Проекты', icon: '💼', count: 4 },
+      { id: 'f_channels', name: 'Каналы & Медиа', icon: '📢', count: 3 }
+    ];
+  });
   const [newFolderName, setNewFolderName] = useState('');
 
   // Delete Account / Logout confirmation
@@ -570,7 +603,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
     playSentSound();
-    setFolders([
+    const updated = [
       ...folders,
       {
         id: 'f_' + Date.now(),
@@ -578,8 +611,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         icon: '📁',
         count: 0
       }
-    ]);
+    ];
+    setFolders(updated);
     setNewFolderName('');
+    onUpdateUser({ settings: { ...user.settings, folders: updated } as any });
+  };
+
+  const handleDeleteFolder = (id: string) => {
+    playReactionSound();
+    const updated = folders.filter((f) => f.id !== id);
+    setFolders(updated);
+    onUpdateUser({ settings: { ...user.settings, folders: updated } as any });
   };
 
   return (
@@ -610,8 +652,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('profile')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'profile' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'profile' ? 'text-[#64b5f6] font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -619,7 +661,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <UserIcon className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Профиль</div>
+                <div className={`font-bold text-xs ${activeTab === 'profile' ? 'text-[#64b5f6]' : 'text-white'}`}>Профиль</div>
                 <div className="text-[10px] text-slate-400">Имя, юзернейм, био и аватарка</div>
               </div>
             </div>
@@ -628,8 +670,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('account')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer border border-[#5288c1]/30 ${
-              activeTab === 'account' ? 'bg-[#5288c1] text-white shadow' : 'bg-[#1a2634] text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'account' ? 'text-[#64b5f6] font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -637,8 +679,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <RefreshCw className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Аккаунт и вход</div>
-                <div className="text-[10px] text-[#64b5f6]">Смена, выход, удалить аккаунт</div>
+                <div className={`font-bold text-xs ${activeTab === 'account' ? 'text-[#64b5f6]' : 'text-white'}`}>Аккаунт и вход</div>
+                <div className="text-[10px] text-slate-400">Смена, выход, удалить аккаунт</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
@@ -646,8 +688,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('password')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer border border-indigo-500/30 ${
-              activeTab === 'password' ? 'bg-gradient-to-r from-indigo-600 to-[#5288c1] text-white shadow font-bold' : 'bg-[#1a2634] text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'password' ? 'text-indigo-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -655,20 +697,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <KeyRound className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-indigo-200">Пароль и 6-значный ПИН</div>
-                <div className="text-[10px] text-indigo-300/80">Сменить код, защиту профиля</div>
+                <div className={`font-bold text-xs ${activeTab === 'password' ? 'text-indigo-400' : 'text-white'}`}>Пароль и 6-значный ПИН</div>
+                <div className="text-[10px] text-slate-400">Сменить код, защиту профиля</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-indigo-400 shrink-0" />
           </button>
 
-          {/* 9. ГОЛОСОВОЙ АВТООТВЕТЧИК BUTTON */}
+          {/* РЕЖИМ ПРИЛОЖЕНИЯ (ПРОСТОЙ / ОБЫЧНЫЙ) — без фонового выделения */}
+          <button
+            onClick={() => handleSelectTab('app_mode')}
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'app_mode' ? 'text-amber-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                  <span className={activeTab === 'app_mode' ? 'text-amber-400' : 'text-white'}>Режим приложения</span>
+                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                    isSimpleMode ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
+                  }`}>
+                    {isSimpleMode ? '⚡ Простой' : '🌐 Обычный'}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {isSimpleMode ? 'Только контакты и чаты' : 'Все вкладки и лента'}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+          </button>
+
+          {/* 9. ГОЛОСОВОЙ АВТООТВЕТЧИК BUTTON — без фонового выделения */}
           <button
             onClick={() => handleSelectTab('answering_machine')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer border border-purple-500/40 ${
-              activeTab === 'answering_machine'
-                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-[#5288c1] text-white shadow font-bold'
-                : 'bg-purple-950/20 text-purple-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'answering_machine' ? 'text-purple-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -676,15 +744,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Voicemail className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-purple-200 flex items-center gap-1.5">
-                  <span>Автоответчик</span>
+                <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                  <span className={activeTab === 'answering_machine' ? 'text-purple-400' : 'text-white'}>Автоответчик</span>
                   {amEnabled ? (
                     <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   ) : (
                     <span className="w-2 h-2 rounded-full bg-slate-500" />
                   )}
                 </div>
-                <div className="text-[10px] text-purple-300/80">TTS, приветствие, расписание</div>
+                <div className="text-[10px] text-slate-400">TTS, приветствие, расписание</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-purple-400 shrink-0" />
@@ -693,8 +761,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ОФОРМЛЕНИЕ И ТЕМА */}
           <button
             onClick={() => handleSelectTab('appearance')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'appearance' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'appearance' ? 'text-pink-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -702,7 +770,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Palette className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Оформление и Тема</div>
+                <div className={`font-bold text-xs ${activeTab === 'appearance' ? 'text-pink-400' : 'text-white'}`}>Оформление и Тема</div>
                 <div className="text-[10px] text-slate-400">Тёмная/Светлая, цвета, шрифт</div>
               </div>
             </div>
@@ -712,8 +780,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ЯЗЫК И ИНТЕРФЕЙС */}
           <button
             onClick={() => handleSelectTab('language')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'language' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'language' ? 'text-cyan-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -721,7 +789,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Globe className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Язык приложения</div>
+                <div className={`font-bold text-xs ${activeTab === 'language' ? 'text-cyan-400' : 'text-white'}`}>Язык приложения</div>
                 <div className="text-[10px] text-slate-400">Русский, English, Қазақша, O'zbek</div>
               </div>
             </div>
@@ -731,8 +799,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* НАСТРОЙКИ ЗВОНКОВ */}
           <button
             onClick={() => handleSelectTab('call_settings')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'call_settings' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'call_settings' ? 'text-emerald-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -740,7 +808,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Phone className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Настройки звонков</div>
+                <div className={`font-bold text-xs ${activeTab === 'call_settings' ? 'text-emerald-400' : 'text-white'}`}>Настройки звонков</div>
                 <div className="text-[10px] text-slate-400">STUN сервер, микрофон, рингтон</div>
               </div>
             </div>
@@ -749,10 +817,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('install_app')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer border border-emerald-500/30 ${
-              activeTab === 'install_app'
-                ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-[#5288c1] text-white shadow font-bold'
-                : 'bg-emerald-950/20 text-emerald-300 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'install_app' ? 'text-emerald-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -760,8 +826,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Download className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-emerald-300">Установить приложение</div>
-                <div className="text-[10px] text-emerald-400/80">Windows, Android APK, iOS</div>
+                <div className={`font-bold text-xs ${activeTab === 'install_app' ? 'text-emerald-400' : 'text-emerald-300'}`}>Установить приложение</div>
+                <div className="text-[10px] text-slate-400">Windows, Android APK, iOS</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -769,8 +835,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('notifications')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'notifications' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'notifications' ? 'text-amber-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -778,7 +844,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Bell className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Уведомления</div>
+                <div className={`font-bold text-xs ${activeTab === 'notifications' ? 'text-amber-400' : 'text-white'}`}>Уведомления</div>
                 <div className="text-[10px] text-slate-400">Звуки, звонки, превью</div>
               </div>
             </div>
@@ -787,8 +853,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('storage')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'storage' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'storage' ? 'text-teal-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -796,7 +862,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <HardDrive className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Память и данные</div>
+                <div className={`font-bold text-xs ${activeTab === 'storage' ? 'text-teal-400' : 'text-white'}`}>Память и данные</div>
                 <div className="text-[10px] text-slate-400">Кэш, автозагрузка</div>
               </div>
             </div>
@@ -805,8 +871,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('blacklist')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'blacklist' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'blacklist' ? 'text-rose-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -814,7 +880,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Черный список</div>
+                <div className={`font-bold text-xs ${activeTab === 'blacklist' ? 'text-rose-400' : 'text-white'}`}>Черный список</div>
                 <div className="text-[10px] text-slate-400">Заблокированные контакты</div>
               </div>
             </div>
@@ -823,8 +889,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('devices')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'devices' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'devices' ? 'text-cyan-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -832,7 +898,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Smartphone className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Устройства</div>
+                <div className={`font-bold text-xs ${activeTab === 'devices' ? 'text-cyan-400' : 'text-white'}`}>Устройства</div>
                 <div className="text-[10px] text-slate-400">Активные сессии, ПК и моб.</div>
               </div>
             </div>
@@ -841,8 +907,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('privacy')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'privacy' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'privacy' ? 'text-indigo-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -850,7 +916,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Lock className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Приватность</div>
+                <div className={`font-bold text-xs ${activeTab === 'privacy' ? 'text-indigo-400' : 'text-white'}`}>Приватность</div>
                 <div className="text-[10px] text-slate-400">Номер телефона, звонки</div>
               </div>
             </div>
@@ -859,8 +925,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('folders')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'folders' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'folders' ? 'text-teal-400 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -868,7 +934,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <FolderPlus className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-bold text-xs text-white">Папки чатов</div>
+                <div className={`font-bold text-xs ${activeTab === 'folders' ? 'text-teal-400' : 'text-white'}`}>Папки чатов</div>
                 <div className="text-[10px] text-slate-400">Группировка диалогов</div>
               </div>
             </div>
@@ -877,8 +943,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <button
             onClick={() => handleSelectTab('version')}
-            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer ${
-              activeTab === 'version' ? 'bg-[#5288c1] text-white shadow' : 'text-slate-200 hover:bg-[#202b36]'
+            className={`w-full px-3.5 py-3 rounded-2xl text-left font-medium transition flex items-center justify-between cursor-pointer bg-transparent border-transparent outline-none select-none ${
+              activeTab === 'version' ? 'text-slate-300 font-bold' : 'text-slate-200 hover:text-white hover:bg-white/5'
             }`}
           >
             <div className="flex items-center gap-3">
@@ -2574,9 +2640,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div className="text-[10px] text-slate-400">{f.count} чатов в папке</div>
                       </div>
                     </div>
-                    <span className="text-xs text-[#64b5f6] font-semibold cursor-pointer hover:underline">
-                      Настроить
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFolder(f.id)}
+                        className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                        title="Удалить папку"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -2862,12 +2935,227 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
+          {/* TAB: РЕЖИМ ПРИЛОЖЕНИЯ (ПРОСТОЙ РЕЖИМ / ОБЫЧНЫЙ РЕЖИМ) */}
+          {activeTab === 'app_mode' && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="border-b border-[#283748] pb-3">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-400" />
+                  <span>Режим интерфейса приложения</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Переключение между минималистичным мессенджером и полнофункциональной платформой.
+                </p>
+              </div>
+
+              {/* ГЛАВНЫЙ ИНТЕРАКТИВНЫЙ ТУМБЛЕР */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#172331] to-[#101a26] border border-[#5288c1]/40 shadow-xl space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                      <span className="text-amber-400 font-extrabold text-base">⚡</span>
+                      <span>Простой режим (Simple Mode)</span>
+                      {isSimpleMode ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                          Активен
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 text-[10px] font-bold">
+                          Выключен
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed max-w-md">
+                      Оставляет только контакты (поиск, добавление по @username или телефону), сообщения (текстовые, голосовые, видео-кружочки, фото, видео, звонки) и создание групп и каналов.
+                    </p>
+                  </div>
+
+                  {/* Тумблер переключатель */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSimpleMode(!isSimpleMode)}
+                    className={`w-14 h-8 rounded-full transition-colors relative cursor-pointer shrink-0 shadow-lg ${
+                      isSimpleMode ? 'bg-[#0077FF] ring-2 ring-[#0077FF]/40' : 'bg-slate-700'
+                    }`}
+                    title={isSimpleMode ? "Переключить на Обычный режим" : "Включить Простой режим"}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-full bg-white transition-transform duration-200 shadow-md absolute top-1 ${
+                        isSimpleMode ? 'left-7' : 'left-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* ДВЕ КАРТОЧКИ ВЫБОРА РЕЖИМА С ПОДРОБНЫМ ОПИСАНИЕМ */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                {/* 1. Карточка Простой режим */}
+                <div
+                  onClick={() => !isSimpleMode && handleToggleSimpleMode(true)}
+                  className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between space-y-3 ${
+                    isSimpleMode
+                      ? 'bg-[#142638] border-[#0077FF] ring-2 ring-[#0077FF]/40 shadow-xl'
+                      : 'bg-[#16212e] border-[#253648] hover:border-slate-500 text-slate-300'
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                          ⚡
+                        </div>
+                        <h4 className="text-xs font-bold text-white">Простой режим</h4>
+                      </div>
+                      {isSimpleMode && <Check className="w-4 h-4 text-emerald-400" />}
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Идеален для быстрого и чистого общения без лишней информации:
+                    </p>
+
+                    <ul className="text-[10px] text-slate-300 space-y-1.5 pl-1">
+                      <li className="flex items-center gap-1.5 text-emerald-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Контакты: поиск, добавление по @юзеру и телефону</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-emerald-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Сообщения: текст, голосовые аудио, видео-кружочки</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-emerald-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Медиа: фото, видео, файлы, звонки (аудио/видео)</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-emerald-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Создание: беседы (группы) и каналы</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-slate-400 italic">
+                        <span className="text-slate-500 font-bold">✕</span>
+                        <span>Скрыты: клипы (Рилсы), лента постов, сообщества</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleSimpleMode(true);
+                    }}
+                    className={`w-full py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      isSimpleMode
+                        ? 'bg-[#0077FF] text-white shadow'
+                        : 'bg-[#223142] text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {isSimpleMode ? '✓ Выбран Простой режим' : 'Выбрать Простой режим'}
+                  </button>
+                </div>
+
+                {/* 2. Карточка Обычный режим */}
+                <div
+                  onClick={() => isSimpleMode && handleToggleSimpleMode(false)}
+                  className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between space-y-3 ${
+                    !isSimpleMode
+                      ? 'bg-[#142638] border-[#0077FF] ring-2 ring-[#0077FF]/40 shadow-xl'
+                      : 'bg-[#16212e] border-[#253648] hover:border-slate-500 text-slate-300'
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold">
+                          🌐
+                        </div>
+                        <h4 className="text-xs font-bold text-white">Обычный режим</h4>
+                      </div>
+                      {!isSimpleMode && <Check className="w-4 h-4 text-emerald-400" />}
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Полный функционал современной социальной платформы:
+                    </p>
+
+                    <ul className="text-[10px] text-slate-300 space-y-1.5 pl-1">
+                      <li className="flex items-center gap-1.5 text-blue-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Все возможности мессенджера и звонков</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-blue-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Лента постов и глобальные сообщества</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-blue-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Вертикальные видео (Клипы / Рилс)</span>
+                      </li>
+                      <li className="flex items-center gap-1.5 text-blue-300">
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>Истории пользователей и Студия контента</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleSimpleMode(false);
+                    }}
+                    className={`w-full py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      !isSimpleMode
+                        ? 'bg-[#0077FF] text-white shadow'
+                        : 'bg-[#223142] text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {!isSimpleMode ? '✓ Выбран Обычный режим' : 'Выбрать Обычный режим'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB: ОФОРМЛЕНИЕ И ТЕМА (APPEARANCE) */}
           {activeTab === 'appearance' && (
             <div className="space-y-4 animate-in fade-in">
               <h3 className="text-base font-bold text-white flex items-center gap-2 border-b border-[#283748] pb-3">
                 <Palette className="w-5 h-5 text-pink-400" /> Оформление и Внешний вид
               </h3>
+
+              {/* Quick Simple Mode Toggle in Appearance */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-[#172331] to-[#101a26] border border-amber-500/30 flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <span className="text-amber-400">⚡</span>
+                    <span>Простой режим интерфейса:</span>
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                      isSimpleMode ? 'bg-amber-500/30 text-amber-300' : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {isSimpleMode ? 'Включён' : 'Выключен'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    {isSimpleMode ? 'Только чаты, звонки и контакты (лента и клипы скрыты)' : 'Полный режим со всеми вкладками'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleSimpleMode(!isSimpleMode)}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                    isSimpleMode ? 'bg-[#0077FF]' : 'bg-slate-700'
+                  }`}
+                  title={isSimpleMode ? "Переключить на Обычный режим" : "Включить Простой режим"}
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 absolute top-1 ${
+                      isSimpleMode ? 'left-6' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
 
               {/* Theme Toggle */}
               <div className="p-4 rounded-2xl bg-[#1e2a38] border border-[#283748] space-y-3">

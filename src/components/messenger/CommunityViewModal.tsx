@@ -588,15 +588,15 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     <div className="fixed inset-0 z-50 bg-[#141414] flex flex-col text-[#e1e3e6] w-full h-full select-none overflow-hidden">
       <div className="bg-[#141414] w-full h-full flex flex-col relative overflow-hidden">
         
-        {/* VK Top Navigation Bar */}
-        <div className="px-4 py-2.5 bg-[#222222] border-b border-[#2e2e2e] flex items-center justify-between shrink-0 z-10">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* VK Top Navigation Bar — Оптимизировано под iPhone 13 и мобильные экраны */}
+        <div className="px-2.5 sm:px-4 py-2 sm:py-2.5 bg-[#222222] border-b border-[#2e2e2e] flex items-center justify-between shrink-0 z-10 gap-1.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <button
               onClick={onClose}
-              className="px-2.5 py-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#e1e3e6] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+              className="px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#e1e3e6] text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
             >
               <ChevronLeft className="w-4 h-4 text-[#71aaeb]" />
-              <span>Назад</span>
+              <span className="hidden xs:inline">Назад</span>
             </button>
 
             <div className="h-4 w-[1px] bg-[#2e2e2e] hidden sm:block" />
@@ -607,7 +607,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 alt=""
                 className="w-6 h-6 rounded-full object-cover shrink-0 hidden sm:block"
               />
-              <span className="text-xs sm:text-sm font-bold text-white truncate">
+              <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[110px] xs:max-w-[160px] sm:max-w-xs">
                 {community.title}
               </span>
               <span className="text-[11px] text-[#828282] hidden md:inline">
@@ -616,18 +616,18 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => {
                 setInviteModalTab('add_person');
                 setShowInviteModal(true);
               }}
-              className="px-3 py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Добавить человека, дать ссылку или QR-код"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Добавить человека"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Добавить человека</span>
+              <span className="hidden md:inline">Добавить человека</span>
             </button>
 
             <button
@@ -636,22 +636,22 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 setInviteModalTab(community.isPrivate ? 'link' : 'qr');
                 setShowInviteModal(true);
               }}
-              className="px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
               title="Ссылка и QR-код сообщества"
             >
               <QrCode className="w-3.5 h-3.5 text-[#71aaeb]" />
-              <span className="hidden sm:inline">Ссылка / QR</span>
+              <span className="hidden md:inline">Ссылка / QR</span>
             </button>
 
             {canManage && (
               <button
                 type="button"
                 onClick={handleOpenEdit}
-                className="px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
+                className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-medium text-[#e1e3e6] flex items-center gap-1.5 cursor-pointer"
                 title="Управление сообществом"
               >
                 <Settings className="w-3.5 h-3.5 text-[#71aaeb]" />
-                <span className="hidden sm:inline">Управление</span>
+                <span className="hidden md:inline">Управление</span>
               </button>
             )}
 
@@ -660,7 +660,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
               className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white cursor-pointer"
               title="Закрыть"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
@@ -727,7 +727,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     title="Изменить обложку, фон и настройки сообщества"
                   >
                     <Camera className="w-3.5 h-3.5" />
-                    <span>Изменить обложку</span>
+                    <span><span className="hidden xs:inline">Изменить </span>обложку</span>
                   </button>
                 )}
               </div>
@@ -774,60 +774,66 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: VK Action Buttons (Single non-wrapping row on iPhone 6s through iPhone 18) */}
-                  <div className="flex items-center gap-1.5 w-full sm:w-auto flex-nowrap sm:shrink-0">
+                  {/* Right: VK Action Buttons — Адаптировано под iPhone 13 (текст никогда не обрезается) */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto sm:shrink-0 mt-3 sm:mt-0">
+                    {/* Primary Button: Подписаться / Вы подписаны */}
                     <button
                       onClick={handleToggleSubscribe}
-                      className={`flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0 ${
+                      className={`w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl text-xs sm:text-[13px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-sm ${
                         isSubscribed
-                          ? 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb]'
-                          : 'bg-[#0077FF] hover:bg-[#0066DD] text-white'
+                          ? 'bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb] border border-[#3d3d40]'
+                          : 'bg-[#0077FF] hover:bg-[#0066DD] text-white shadow-blue-500/20'
                       }`}
                     >
                       {isSubscribed ? (
                         <>
-                          <UserCheck className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">Вы подписаны</span>
+                          <UserCheck className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <span>Вы подписаны</span>
                         </>
                       ) : (
                         <>
-                          <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">Подписаться</span>
+                          <UserPlus className="w-4 h-4 shrink-0" />
+                          <span>Подписаться</span>
                         </>
                       )}
                     </button>
 
-                    {canManage && (
+                    {/* Secondary Buttons: Опубликовать и Сообщение (на iPhone 13 делятся 50/50 в ряд, на ПК в одну линию) */}
+                    <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPostModal(true)}
+                          className="px-3 py-2.5 sm:py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs sm:text-[13px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition border border-[#38383c]"
+                        >
+                          <Plus className="w-4 h-4 text-[#71aaeb] shrink-0" />
+                          <span>Опубликовать</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
-                        onClick={() => setShowNewPostModal(true)}
-                        className="flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0"
+                        onClick={() => {
+                          if (onOpenCommunityChat) {
+                            onOpenCommunityChat(community);
+                          } else {
+                            onMessageUser?.({
+                              id: community.ownerId,
+                              name: `${community.title} (${ownerDisplayName})`,
+                              username: ownerUsername,
+                              avatar: community.avatarUrl
+                            });
+                          }
+                        }}
+                        className={`px-3 py-2.5 sm:py-2 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs sm:text-[13px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition border border-[#38383c] ${
+                          !canManage ? 'col-span-2' : ''
+                        }`}
+                        title={`Перейти в чат сообщества (диалог с владельцем: ${ownerDisplayName})`}
                       >
-                        <Plus className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
-                        <span className="truncate">Опубликовать</span>
+                        <MessageSquare className="w-4 h-4 text-[#71aaeb] shrink-0" />
+                        <span>Сообщение</span>
                       </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onOpenCommunityChat) {
-                          onOpenCommunityChat(community);
-                        } else {
-                          onMessageUser?.({
-                            id: community.ownerId,
-                            name: `${community.title} (${ownerDisplayName})`,
-                            username: ownerUsername,
-                            avatar: community.avatarUrl
-                          });
-                        }
-                      }}
-                      className="flex-1 sm:flex-initial px-2.5 sm:px-3.5 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-[11px] sm:text-[13px] font-semibold flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap min-w-0"
-                      title={`Перейти в чат сообщества (диалог с владельцем: ${ownerDisplayName})`}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
-                      <span className="truncate">Сообщение</span>
-                    </button>
+                    </div>
                   </div>
                 </div>
 

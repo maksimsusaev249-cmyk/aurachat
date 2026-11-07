@@ -83,7 +83,8 @@ import {
   X,
   ExternalLink,
   Compass,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 
 export default function App() {
@@ -502,6 +503,26 @@ export default function App() {
   const [isAddStoryOpen, setIsAddStoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('profile');
+
+  // App Mode State: Simple Mode (только контакты, чаты, звонки, группы и каналы) vs Standard Mode
+  const [isSimpleMode, setIsSimpleMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aurachat_simple_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSimpleMode = (enabled: boolean) => {
+    setIsSimpleMode(enabled);
+    try {
+      localStorage.setItem('aurachat_simple_mode', String(enabled));
+    } catch {}
+    if (enabled && (activeScreen === 'reels' || activeScreen === 'posts')) {
+      setActiveScreen('chats');
+    }
+  };
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [lastLoggedUser, setLastLoggedUser] = useState<User | null>(() => {
     try {
@@ -1098,11 +1119,11 @@ export default function App() {
   };
 
 
-  // Instant 1-click Account Switch on trusted device (like SlimChat)
-  const handleRequestSwitchUser = (targetUser: User, requirePin: boolean = false) => {
+  // Account Switch handler: requires PIN if target profile is protected by PIN code
+  const handleRequestSwitchUser = (targetUser: User, requirePin: boolean = true) => {
     if (!targetUser) return;
     if (isLoggedIn && targetUser.id === currentUser.id) return;
-    if (requirePin && targetUser.pinCode && targetUser.pinCode.length >= 4) {
+    if (targetUser.pinCode && targetUser.pinCode.length >= 4) {
       setPinPromptTargetUser(targetUser);
     } else {
       handlePinPromptSuccess(targetUser);
@@ -3313,23 +3334,23 @@ export default function App() {
                 setGlobalSearchInitialQuery('');
                 setIsGlobalSearchOpen(true);
               }}
-              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:bg-[#222222]/70"
+              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:text-white bg-transparent border-transparent outline-none select-none"
               title="Глобальный поиск: профили людей, сообщества, каналы, посты, видео и фото"
             >
               <Search className="w-5 h-5 text-[#71aaeb] shrink-0" />
               <span className="hidden lg:inline truncate">Поиск</span>
             </button>
 
-            {/* Моя страница */}
+            {/* Моя страница — без фонового выделения */}
             <button
               onClick={() => {
                 setSelectedOtherUser(null);
                 setActiveScreen('profile');
               }}
-              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium ${
+              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium bg-transparent border-transparent outline-none select-none ${
                 activeScreen === 'profile' && !selectedOtherUser
-                  ? 'bg-[#222222] text-white font-semibold'
-                  : 'text-[#e1e3e6] hover:bg-[#222222]/70'
+                  ? 'text-[#71aaeb] font-semibold'
+                  : 'text-[#e1e3e6] hover:text-white'
               }`}
               title="Моя страница"
             >
@@ -3337,27 +3358,29 @@ export default function App() {
               <span className="hidden lg:inline truncate">Моя страница</span>
             </button>
 
-            {/* Новости */}
-            <button
-              onClick={() => handleOpenPostsFeed('all')}
-              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium ${
-                activeScreen === 'posts' && postsInitialTab === 'all'
-                  ? 'bg-[#222222] text-white font-semibold'
-                  : 'text-[#e1e3e6] hover:bg-[#222222]/70'
-              }`}
-              title="Новости и лента"
-            >
-              <ImageIcon className="w-5 h-5 text-[#71aaeb] shrink-0" />
-              <span className="hidden lg:inline truncate">Новости</span>
-            </button>
+            {/* Новости — скрыты в простом режиме, без фонового выделения */}
+            {!isSimpleMode && (
+              <button
+                onClick={() => handleOpenPostsFeed('all')}
+                className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium bg-transparent border-transparent outline-none select-none ${
+                  activeScreen === 'posts' && postsInitialTab === 'all'
+                    ? 'text-[#71aaeb] font-semibold'
+                    : 'text-[#e1e3e6] hover:text-white'
+                }`}
+                title="Новости и лента"
+              >
+                <ImageIcon className="w-5 h-5 text-[#71aaeb] shrink-0" />
+                <span className="hidden lg:inline truncate">Новости</span>
+              </button>
+            )}
 
-            {/* Мессенджер */}
+            {/* Мессенджер — без фонового выделения */}
             <button
               onClick={() => setActiveScreen('chats')}
-              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium ${
+              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium bg-transparent border-transparent outline-none select-none ${
                 activeScreen === 'chats'
-                  ? 'bg-[#222222] text-white font-semibold'
-                  : 'text-[#e1e3e6] hover:bg-[#222222]/70'
+                  ? 'text-[#71aaeb] font-semibold'
+                  : 'text-[#e1e3e6] hover:text-white'
               }`}
               title="Мессенджер"
             >
@@ -3365,10 +3388,10 @@ export default function App() {
               <span className="hidden lg:inline truncate">Мессенджер</span>
             </button>
 
-            {/* Звонки */}
+            {/* Звонки — без фонового выделения */}
             <button
               onClick={() => setIsCallHistoryOpen(true)}
-              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:bg-[#222222]/70 relative"
+              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:text-white bg-transparent border-transparent outline-none select-none relative"
               title="Звонки"
             >
               <Phone className="w-5 h-5 text-[#71aaeb] shrink-0" />
@@ -3380,67 +3403,99 @@ export default function App() {
               )}
             </button>
 
-            {/* Друзья / Контакты */}
+            {/* Друзья / Контакты — без фонового выделения */}
             <button
               onClick={() => setIsContactsOpen(true)}
-              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:bg-[#222222]/70"
+              className="w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium text-[#e1e3e6] hover:text-white bg-transparent border-transparent outline-none select-none"
               title="Друзья и контакты"
             >
               <Users className="w-5 h-5 text-[#71aaeb] shrink-0" />
               <span className="hidden lg:inline truncate">Друзья</span>
             </button>
 
-            {/* Сообщества */}
-            <button
-              onClick={() => handleOpenPostsFeed('communities')}
-              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium ${
-                activeScreen === 'posts' && postsInitialTab === 'communities'
-                  ? 'bg-[#222222] text-white font-semibold'
-                  : 'text-[#e1e3e6] hover:bg-[#222222]/70'
-              }`}
-              title="Список сообществ"
-            >
-              <Layers className="w-5 h-5 text-[#71aaeb] shrink-0" />
-              <span className="hidden lg:inline truncate">Сообщества</span>
-            </button>
+            {/* Сообщества — скрыты в простом режиме, без фонового выделения */}
+            {!isSimpleMode && (
+              <button
+                onClick={() => handleOpenPostsFeed('communities')}
+                className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium bg-transparent border-transparent outline-none select-none ${
+                  activeScreen === 'posts' && postsInitialTab === 'communities'
+                    ? 'text-[#71aaeb] font-semibold'
+                    : 'text-[#e1e3e6] hover:text-white'
+                }`}
+                title="Список сообществ"
+              >
+                <Layers className="w-5 h-5 text-[#71aaeb] shrink-0" />
+                <span className="hidden lg:inline truncate">Сообщества</span>
+              </button>
+            )}
 
-            {/* Клипы */}
-            <button
-              onClick={handleOpenReelsFeed}
-              className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium ${
-                activeScreen === 'reels'
-                  ? 'bg-[#222222] text-white font-semibold'
-                  : 'text-[#e1e3e6] hover:bg-[#222222]/70'
-              }`}
-              title="Клипы (Рилс)"
-            >
-              <Play className="w-5 h-5 text-[#71aaeb] shrink-0" />
-              <span className="hidden lg:inline truncate">Клипы</span>
-            </button>
+            {/* Клипы — скрыты в простом режиме, без фонового выделения */}
+            {!isSimpleMode && (
+              <button
+                onClick={handleOpenReelsFeed}
+                className={`w-full px-2.5 py-2 rounded-lg transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-medium bg-transparent border-transparent outline-none select-none ${
+                  activeScreen === 'reels'
+                    ? 'text-[#71aaeb] font-semibold'
+                    : 'text-[#e1e3e6] hover:text-white'
+                }`}
+                title="Клипы (Рилс)"
+              >
+                <Play className="w-5 h-5 text-[#71aaeb] shrink-0" />
+                <span className="hidden lg:inline truncate">Клипы</span>
+              </button>
+            )}
 
             <div className="my-1.5 border-t border-[#2e2e2e]" />
 
-            {/* Опубликовать / Быстрые действия */}
-            <button
-              onClick={() => setIsPlusMenuOpen(true)}
-              className="w-full px-2.5 py-2 rounded-lg bg-[#222222] hover:bg-[#2c2d2e] text-[#71aaeb] transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-semibold border border-[#2e2e2e]"
-              title="Быстрые действия: Пост, Камера, QR, Новый чат, Звонки"
-            >
-              <Plus className="w-5 h-5 shrink-0" />
-              <span className="hidden lg:inline truncate">Опубликовать</span>
-            </button>
+            {/* Быстрые действия / Создать чат или канал — без фонового выделения */}
+            {isSimpleMode ? (
+              <button
+                onClick={() => {
+                  setCreateChatDefaultType('group');
+                  setIsCreateChatOpen(true);
+                }}
+                className="w-full px-2.5 py-2 rounded-lg bg-transparent hover:bg-transparent text-[#71aaeb] hover:text-white transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-semibold border-transparent outline-none select-none"
+                title="Создать группу или канал"
+              >
+                <Plus className="w-5 h-5 shrink-0" />
+                <span className="hidden lg:inline truncate">Создать чат</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsPlusMenuOpen(true)}
+                className="w-full px-2.5 py-2 rounded-lg bg-transparent hover:bg-transparent text-[#71aaeb] hover:text-white transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs font-semibold border-transparent outline-none select-none"
+                title="Быстрые действия: Пост, Камера, QR, Новый чат, Звонки"
+              >
+                <Plus className="w-5 h-5 shrink-0" />
+                <span className="hidden lg:inline truncate">Опубликовать</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-1 flex flex-col border-t border-[#2e2e2e] pt-2">
-            {/* Архитектура и SQL */}
+            {/* Тумблер / Индикатор режима (Простой / Обычный) — без фонового выделения */}
             <button
-              onClick={() => setIsTechSpecOpen(true)}
-              className="w-full px-2.5 py-2 rounded-lg text-[#939393] hover:text-white hover:bg-[#222222] transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs"
-              title="Архитектура, SQL DDL и Бэкенд код"
+              onClick={() => handleOpenSettings('app_mode')}
+              className="w-full px-2 py-1.5 rounded-lg border-transparent bg-transparent transition cursor-pointer flex items-center justify-center lg:justify-start gap-2.5 text-xs font-medium text-[#939393] hover:text-white outline-none select-none"
+              title="Переключить Простой режим / Обычный режим"
             >
-              <FileCode className="w-4 h-4 text-[#71aaeb] shrink-0" />
-              <span className="hidden lg:inline truncate">Архитектура</span>
+              <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="hidden lg:inline truncate">
+                {isSimpleMode ? '⚡ Простой режим' : '🌐 Обычный режим'}
+              </span>
             </button>
+
+            {/* Архитектура и SQL — скрыто в простом режиме */}
+            {!isSimpleMode && (
+              <button
+                onClick={() => setIsTechSpecOpen(true)}
+                className="w-full px-2.5 py-2 rounded-lg text-[#939393] hover:text-white hover:bg-[#222222] transition cursor-pointer flex items-center justify-center lg:justify-start gap-3 text-xs"
+                title="Архитектура, SQL DDL и Бэкенд код"
+              >
+                <FileCode className="w-4 h-4 text-[#71aaeb] shrink-0" />
+                <span className="hidden lg:inline truncate">Архитектура</span>
+              </button>
+            )}
 
             {/* Настройки */}
             <button
@@ -3480,6 +3535,7 @@ export default function App() {
                 setIsCameraStudioOpen(true);
               }}
               currentUser={currentUser}
+              isSimpleMode={isSimpleMode}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onOpenTechSpecs={() => setIsTechSpecOpen(true)}
               onOpenStudio={() => {
@@ -3857,84 +3913,152 @@ export default function App() {
         )}
       </div>
 
-      {/* Mobile & Foldable Book Bottom Navigation Bar — Exactly 5 Buttons: Новости, Клипы, Чаты, Ещё, Профиль */}
+      {/* Mobile & Foldable Book Bottom Navigation Bar — Clean native style without rectangular highlight boxes or borders */}
       <div
         className={`${
           deviceViewMode === 'auto' ? 'lg:hidden' : 'grid'
-        } px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))] bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0`}
+        } px-1 pt-1 pb-[max(0.375rem,env(safe-area-inset-bottom,0px))] bg-[#1c1c1e] border-t border-[#2e2e2e] grid grid-cols-5 gap-1 items-center z-30 shrink-0 select-none`}
       >
-        {/* 1. Новости */}
-        <button
-          onClick={() => handleOpenPostsFeed('all')}
-          className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            activeScreen === 'posts' && postsInitialTab === 'all'
-              ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
-              : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
-          }`}
-          title="Новости и лента"
-        >
-          <ImageIcon className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Новости</span>
-        </button>
+        {isSimpleMode ? (
+          <>
+            {/* 1. Чаты — без фонового выделения */}
+            <button
+              onClick={() => setActiveScreen('chats')}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                activeScreen === 'chats'
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Мессенджер и диалоги"
+            >
+              <MessageSquare className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Чаты</span>
+            </button>
 
-        {/* 2. Клипы */}
-        <button
-          onClick={handleOpenReelsFeed}
-          className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            activeScreen === 'reels'
-              ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
-              : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
-          }`}
-          title="Клипы"
-        >
-          <Play className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Клипы</span>
-        </button>
+            {/* 2. Звонки */}
+            <button
+              onClick={() => setIsCallHistoryOpen(true)}
+              className="h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent text-[#828282] hover:text-white relative"
+              title="Звонки и вызовы"
+            >
+              <Phone className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Звонки</span>
+              {missedCallsCount > 0 && (
+                <span className="absolute top-1 right-2 px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-bold">
+                  {missedCallsCount}
+                </span>
+              )}
+            </button>
 
-        {/* 3. Чаты */}
-        <button
-          onClick={() => setActiveScreen('chats')}
-          className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            activeScreen === 'chats'
-              ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
-              : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
-          }`}
-          title="Мессенджер"
-        >
-          <MessageSquare className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Чаты</span>
-        </button>
+            {/* 3. Контакты (поиск по юзернейму, телефону) */}
+            <button
+              onClick={() => setIsContactsOpen(true)}
+              className="h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent text-[#828282] hover:text-white"
+              title="Контакты: поиск по @юзернейму, номеру телефона"
+            >
+              <Users className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Контакты</span>
+            </button>
 
-        {/* 4. Ещё (заменяет кнопку «Группы», внутри находятся Группы/Сообщества и сервисы) */}
-        <button
-          onClick={() => setIsMoreMenuOpen(true)}
-          className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            isMoreMenuOpen || (activeScreen === 'posts' && postsInitialTab === 'communities') || selectedCommunity !== null
-              ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
-              : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
-          }`}
-          title="Ещё (внутри Группы, Поиск, Создать, Звонки)"
-        >
-          <Grid className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Ещё</span>
-        </button>
+            {/* 4. Создать (группу, канал) — без фонового выделения */}
+            <button
+              onClick={() => {
+                setCreateChatDefaultType('group');
+                setIsCreateChatOpen(true);
+              }}
+              className="h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent text-[#828282] hover:text-white"
+              title="Создать группу или канал"
+            >
+              <Plus className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Создать</span>
+            </button>
 
-        {/* 5. Профиль */}
-        <button
-          onClick={() => {
-            setSelectedOtherUser(null);
-            setActiveScreen('profile');
-          }}
-          className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition-all active:scale-95 cursor-pointer border ${
-            activeScreen === 'profile' && !selectedOtherUser
-              ? 'bg-[#0077FF]/15 text-[#0077FF] border-[#0077FF]/35'
-              : 'bg-transparent hover:bg-[#2a2a2d] text-[#939393] hover:text-white border-transparent'
-          }`}
-          title="Мой профиль"
-        >
-          <UserIcon className="w-[18px] h-[18px] shrink-0" />
-          <span className="leading-none truncate">Профиль</span>
-        </button>
+            {/* 5. Настройки — без фонового выделения */}
+            <button
+              onClick={() => handleOpenSettings('app_mode')}
+              className="h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent text-[#828282] hover:text-white"
+              title="Настройки: переключение режимов, аккаунт, безопасность"
+            >
+              <Zap className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Простой</span>
+            </button>
+          </>
+        ) : (
+          <>
+            {/* 1. Новости — без фонового выделения */}
+            <button
+              onClick={() => handleOpenPostsFeed('all')}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                activeScreen === 'posts' && postsInitialTab === 'all'
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Новости и лента"
+            >
+              <ImageIcon className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Новости</span>
+            </button>
+
+            {/* 2. Клипы */}
+            <button
+              onClick={handleOpenReelsFeed}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                activeScreen === 'reels'
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Клипы"
+            >
+              <Play className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Клипы</span>
+            </button>
+
+            {/* 3. Чаты */}
+            <button
+              onClick={() => setActiveScreen('chats')}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                activeScreen === 'chats'
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Мессенджер"
+            >
+              <MessageSquare className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Чаты</span>
+            </button>
+
+            {/* 4. Ещё — без фонового выделения */}
+            <button
+              onClick={() => setIsMoreMenuOpen(true)}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                isMoreMenuOpen || (activeScreen === 'posts' && postsInitialTab === 'communities') || selectedCommunity !== null
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Ещё (внутри Группы, Поиск, Создать, Звонки)"
+            >
+              <Grid className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Ещё</span>
+            </button>
+
+            {/* 5. Профиль — без фонового выделения */}
+            <button
+              onClick={() => {
+                setSelectedOtherUser(null);
+                setActiveScreen('profile');
+              }}
+              className={`h-11 rounded-lg flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors cursor-pointer bg-transparent border-transparent ${
+                activeScreen === 'profile' && !selectedOtherUser
+                  ? 'text-[#0077FF]'
+                  : 'text-[#828282] hover:text-white'
+              }`}
+              title="Мой профиль"
+            >
+              <UserIcon className="w-5 h-5 shrink-0" />
+              <span className="leading-none truncate">Профиль</span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Modal: «Ещё» (внутри: Группы и Сообщества, Поиск, Создать, Звонки, Контакты, Камера, Настройки) */}
@@ -4234,6 +4358,8 @@ export default function App() {
           user={currentUser}
           savedAccounts={myDeviceAccounts}
           initialTab={settingsInitialTab}
+          isSimpleMode={isSimpleMode}
+          onToggleSimpleMode={handleToggleSimpleMode}
           onUpdateUser={handleUpdateUser}
           onUpdateUserPin={handleUpdateCurrentUserPin}
           onSwitchUser={(newUser) => {
@@ -4376,6 +4502,8 @@ export default function App() {
         currentUser={currentUser}
         savedAccounts={myDeviceAccounts}
         missedCallsCount={missedCallsCount}
+        isSimpleMode={isSimpleMode}
+        onToggleSimpleMode={handleToggleSimpleMode}
         onClose={() => setIsMainMenuOpen(false)}
         onOpenContacts={() => setIsContactsOpen(true)}
         onOpenCallsHistory={() => setIsCallHistoryOpen(true)}
