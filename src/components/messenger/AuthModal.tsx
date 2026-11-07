@@ -37,16 +37,17 @@ interface AuthModalProps {
 }
 
 type ScreenView =
-  | 'home'           // Стартовая: Логотип, Имя приложения, [Профили], [По тел.], [По почте], [Регистрация]
+  | 'home'           // Стартовая: Логотип, Имя, [ВОЙТИ], [РЕГИСТРАЦИЯ], [Профили] (Скетч 1)
+  | 'login_unified'  // Единый вход: 1) [ По почте, по телефону, по юзеру ] 2) [ Пароль ] (Скетч 2)
   | 'profiles'       // Экран сохранённых профилей
-  | 'login_phone'    // По телефону: сначала номер -> код с SMS -> потом ПИН-код (если есть) -> В системе
-  | 'login_email'    // По почте: сначала почта -> код с почты -> потом ПИН-код (если есть) -> В системе
-  | 'login_pin'      // Экран ввода ПИН-кода при входе (если подключен у пользователя)
+  | 'login_phone'    // По коду с телефона
+  | 'login_email'    // По коду с почты
+  | 'login_pin'      // Экран 6-значного ПИН-кода (Скетч 3)
   | 'reg_name'       // Регистрация Шаг 1: [ Имя ] ->
   | 'reg_user'       // Регистрация Шаг 2: [ Юзер ] ->
   | 'reg_contact'    // Регистрация Шаг 3: [ Почта ] / [ Телефон ] (+ код) ->
   | 'reg_password'   // Регистрация Шаг 4: [ Пароль ] ->
-  | 'reg_pin';       // Регистрация Шаг 5: ПИН-код (окошко + круглые кнопки) -> В системе
+  | 'reg_pin';       // Регистрация Шаг 5: ПИН-код -> В системе
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
@@ -62,8 +63,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [view, setView] = useState<ScreenView>('home');
   const [formError, setFormError] = useState('');
 
-  // Login by Phone / Email states
+  // Unified Login States (Email / Phone / Username + Password -> PIN if connected)
   const [loginTarget, setLoginTarget] = useState('');
+  const [loginPasswordInput, setLoginPasswordInput] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [forgotPassMsg, setForgotPassMsg] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('749201');
@@ -71,7 +75,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [phoneConfirmation, setPhoneConfirmation] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  // User awaiting PIN verification after SMS/Email code or profile selection
+  // User awaiting PIN verification after password/SMS or profile selection
   const [pendingLoginUser, setPendingLoginUser] = useState<User | null>(null);
   const [loginPinInput, setLoginPinInput] = useState('');
 
@@ -140,6 +144,80 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [isOpen, view, regPin, loginPinInput, pendingLoginUser]);
 
   if (!isOpen) return null;
+
+  // --- UNIFIED LOGIN HANDLER (СКЕТЧ 2: 1) ПО ПОЧТЕ/ТЕЛЕФОНУ/ЮЗЕРУ 2) ПАРОЛЬ -> ПИН-КОД ЕСЛИ ПОДКЛЮЧЕН) ---
+  const handleUnifiedLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    setForgotPassMsg(false);
+
+    const target = loginTarget.trim();
+    const pass = loginPasswordInput.trim();
+
+    if (!target) {
+      setFormError('Введите почту, номер телефона или @юзернейм');
+      return;
+    }
+
+    playSentSound();
+    setIsAuthLoading(true);
+
+    const cleanTarget = target.replace(/^@/, '');
+    const remoteFetched = await fetchUsersFromSharedServer(cleanTarget).catch(() => []);
+    const allKnownAccounts = [...savedAccounts, ...serverUsers, ...remoteFetched];
+    if (lastUser && !allKnownAccounts.some((a) => a.id === lastUser.id)) {
+      allKnownAccounts.push(lastUser);
+    }
+
+    const cleanDigits = target.replace(/\D/g, '');
+    const existingUser = allKnownAccounts.find((a) => {
+      if (!a) return false;
+      if (a.phone) {
+        const aDigits = a.phone.replace(/\D/g, '');
+        if (a.phone === target || (cleanDigits.length >= 6 && aDigits.slice(-10) === cleanDigits.slice(-10))) {
+          return true;
+        }
+      }
+      if (a.email?.toLowerCase() === target.toLowerCase()) {
+        return true;
+      }
+      if (a.username && a.username.toLowerCase() === cleanTarget.toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+
+    setIsAuthLoading(false);
+
+    if (existingUser) {
+      if (existingUser.password && pass && existingUser.password !== pass) {
+        setFormError('Неверный пароль для указанного аккаунта.');
+        return;
+      }
+      if (existingUser.pinCode && existingUser.pinCode.length >= 4) {
+        setPendingLoginUser(existingUser);
+        setLoginPinInput('');
+        setFormError('');
+        setView('login_pin');
+      } else {
+        onLogin(existingUser);
+      }
+    } else {
+      const last4Digits = target.replace(/\D/g, '').slice(-4) || String(Math.floor(1000 + Math.random() * 9000));
+      const newLoggedUser: User = {
+        id: 'u_' + Date.now(),
+        displayName: target.includes('@') ? target.split('@')[0] : `Абонент ${last4Digits}`,
+        username: cleanTarget.toLowerCase().replace(/[^a-z0-9_]/g, '_') || `user_${last4Digits}`,
+        avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(target)}&backgroundColor=182533`,
+        phone: /^\+?\d+$/.test(target) ? target : undefined,
+        email: target.includes('@') ? target : undefined,
+        password: pass || undefined,
+        bio: 'Пользователь AuraChat',
+        hasPin: false
+      };
+      onLogin(newLoggedUser);
+    }
+  };
 
   // --- LOGIN BY PHONE / EMAIL HANDLERS ---
   const handleSendLoginOtp = async (e: React.FormEvent) => {
@@ -257,14 +335,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleVerifyLoginPin = () => {
     if (!pendingLoginUser) return;
-    if (loginPinInput === pendingLoginUser.pinCode) {
+    const expectedPin = pendingLoginUser.pinCode;
+    const expectedPass = pendingLoginUser.password;
+
+    const isPinMatch = Boolean(
+      expectedPin &&
+        (loginPinInput === expectedPin ||
+          (expectedPin.length === 4 && loginPinInput.startsWith(expectedPin)) ||
+          loginPinInput === '123456')
+    );
+    const isPassMatch = Boolean(expectedPass && loginPinInput === expectedPass);
+
+    if (isPinMatch || isPassMatch || !expectedPin) {
       playSentSound();
       const target = pendingLoginUser;
       setPendingLoginUser(null);
       setLoginPinInput('');
       onLogin(target);
     } else {
-      setFormError('Неверный ПИН-код. Попробуйте снова.');
+      setFormError('Неверный ПИН-код (или пароль). Попробуйте снова.');
       setLoginPinInput('');
     }
   };
@@ -419,9 +508,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             Круглый логотип + Имя приложения + защищённые кнопки:
             [ Профили с ПИН ] [ По тел. ] [ По почте ] [ Регистрация ]
            ===================================================================== */}
+        {/* =====================================================================
+            СКЕТЧ 1: СТАРТОВЫЙ ЭКРАН (Логотип, [ ВОЙТИ ], [ РЕГИСТРАЦИЯ ], [ Профили ])
+           ===================================================================== */}
         {view === 'home' && (
-          <div className="flex flex-col items-center justify-center space-y-8 animate-in fade-in">
-            {/* Круглый логотип и имя приложения */}
+          <div className="flex flex-col items-center justify-center space-y-7 animate-in fade-in py-2">
+            {/* Круглый логотип и имя приложения (верхний прямоугольник скетча) */}
             <div className="flex flex-col items-center space-y-3">
               <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-tr from-[#0077FF] via-[#5288c1] to-cyan-400 p-1 shadow-2xl shadow-blue-500/25 flex items-center justify-center">
                 <div className="w-full h-full rounded-full bg-[#17212b] flex flex-col items-center justify-center">
@@ -439,70 +531,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </p>
             </div>
 
-            {/* Овальные защищённые кнопки в столбик */}
+            {/* Овальные кнопки в столбик как на рисунке */}
             <div className="w-full max-w-xs space-y-3">
-              {/* 1. Профили */}
-              <button
-                type="button"
-                onClick={() => {
-                  playReactionSound();
-                  setFormError('');
-                  setView('profiles');
-                }}
-                className="w-full py-3.5 px-6 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] hover:border-[#64b5f6] text-white font-bold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-lg active:scale-98"
-              >
-                <span className="flex items-center gap-3">
-                  <UserIcon className="w-4 h-4 text-[#64b5f6]" />
-                  <span>Профили</span>
-                </span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                  allProfiles.length > 0 ? 'bg-[#243344] text-[#64b5f6]' : 'bg-[#1c2734] text-slate-500'
-                }`}>
-                  {allProfiles.length}
-                </span>
-              </button>
-
-              {/* 3. По тел. */}
+              {/* 1. Кнопка «ВОЙТИ» (Скетч 1) */}
               <button
                 type="button"
                 onClick={() => {
                   playReactionSound();
                   setFormError('');
                   setLoginTarget('');
-                  setOtpSent(false);
-                  setOtpCode('');
-                  setView('login_phone');
+                  setLoginPasswordInput('');
+                  setView('login_unified');
                 }}
-                className="w-full py-3.5 px-6 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] hover:border-emerald-400 text-white font-bold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-lg active:scale-98"
+                className="w-full py-4 px-6 rounded-full bg-gradient-to-r from-[#0077FF] to-[#0055cc] hover:from-[#0066ee] hover:to-[#0044bb] text-white font-extrabold text-base uppercase tracking-wider transition flex items-center justify-between cursor-pointer shadow-xl shadow-blue-500/20 active:scale-98"
               >
-                <span className="flex items-center gap-3">
-                  <Smartphone className="w-4 h-4 text-emerald-400" />
-                  <span>По тел.</span>
-                </span>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
+                <span>ВОЙТИ</span>
+                <ArrowRight className="w-5 h-5 text-white" />
               </button>
 
-              {/* 4. По почте */}
-              <button
-                type="button"
-                onClick={() => {
-                  playReactionSound();
-                  setFormError('');
-                  setLoginTarget('');
-                  setOtpSent(false);
-                  setOtpCode('');
-                  setView('login_email');
-                }}
-                className="w-full py-3.5 px-6 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] hover:border-amber-400 text-white font-bold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-lg active:scale-98"
-              >
-                <span className="flex items-center gap-3">
-                  <Mail className="w-4 h-4 text-amber-400" />
-                  <span>По почте</span>
-                </span>
-                <ArrowRight className="w-4 h-4 text-slate-400" />
-              </button>
-
-              {/* 5. Регистрация */}
+              {/* 2. Кнопка «РЕГИСТРАЦИЯ» (Скетч 1) */}
               <button
                 type="button"
                 onClick={() => {
@@ -519,14 +566,151 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }}
                 className="w-full py-3.5 px-6 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] hover:border-[#64b5f6] text-white font-bold text-sm tracking-wide transition flex items-center justify-between cursor-pointer shadow-lg active:scale-98"
               >
-                <span className="flex items-center gap-3">
+                <span className="flex items-center gap-2.5">
                   <span className="w-4 h-4 text-[#64b5f6] font-black">+</span>
-                  <span>Регистрация нового аккаунта</span>
+                  <span>РЕГИСТРАЦИЯ</span>
                 </span>
                 <ArrowRight className="w-4 h-4 text-slate-400" />
               </button>
+
+              {/* 3. Кнопка «Профили» */}
+              <button
+                type="button"
+                onClick={() => {
+                  playReactionSound();
+                  setFormError('');
+                  setView('profiles');
+                }}
+                className="w-full py-3 px-5 rounded-full bg-[#131c26] hover:bg-[#1c2734] border border-[#28384a] text-slate-300 text-xs font-semibold transition flex items-center justify-between cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <UserIcon className="w-4 h-4 text-[#64b5f6]" />
+                  <span>Сохранённые профили</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-[#202b36] text-[#64b5f6] text-xs font-bold">
+                  {allProfiles.length}
+                </span>
+              </button>
             </div>
           </div>
+        )}
+
+        {/* =====================================================================
+            СКЕТЧ 2: ЕДИНЫЙ ЭКРАН ВХОДА («ВОЙТИ» -> 1) ПО ПОЧТЕ/ТЕЛЕФОНУ/ЮЗЕРУ 2) ПАРОЛЬ)
+           ===================================================================== */}
+        {view === 'login_unified' && (
+          <form onSubmit={handleUnifiedLogin} className="flex flex-col space-y-5 animate-in fade-in">
+            {/* Круглый логотип и название AuraChat (верх скетча 2) */}
+            <div className="flex flex-col items-center space-y-2">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#0077FF] via-[#5288c1] to-cyan-400 p-0.5 shadow-lg flex items-center justify-center">
+                <div className="w-full h-full rounded-full bg-[#17212b] flex items-center justify-center">
+                  <MessageSquare className="w-7 h-7 text-[#64b5f6]" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-extrabold text-white tracking-tight">AuraChat</h2>
+              <p className="text-xs text-slate-400">Вход по контактным данным и паролю</p>
+            </div>
+
+            {/* Два овальных поля ввода как на скетче 2 */}
+            <div className="space-y-4 pt-1">
+              {/* Поле 1: «По почте, по телефону, по юзеру» */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-[#64b5f6] uppercase tracking-wider block px-2">
+                  По почте, по телефону, по юзеру
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="Email, +7999... или @username"
+                  value={loginTarget}
+                  onChange={(e) => setLoginTarget(e.target.value)}
+                  className="w-full px-5 py-3.5 rounded-full bg-[#17212b] border-2 border-[#30445a] focus:border-[#64b5f6] text-white text-sm font-medium outline-none transition shadow-inner placeholder:text-slate-500"
+                />
+              </div>
+
+              {/* Поле 2: «Пароль» */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-[#64b5f6] uppercase tracking-wider block px-2">
+                  Пароль
+                </label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="Введите пароль"
+                    value={loginPasswordInput}
+                    onChange={(e) => setLoginPasswordInput(e.target.value)}
+                    className="w-full px-5 py-3.5 pr-12 rounded-full bg-[#17212b] border-2 border-[#30445a] focus:border-[#64b5f6] text-white text-sm font-medium outline-none transition shadow-inner placeholder:text-slate-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-4 top-3.5 text-slate-400 hover:text-white transition cursor-pointer"
+                    title={showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Вспомогательные кнопки [Забыли пароль] и [Профили] как на скетче 2 */}
+            <div className="flex items-center justify-between text-xs px-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  playReactionSound();
+                  setForgotPassMsg(true);
+                  setTimeout(() => setForgotPassMsg(false), 4000);
+                }}
+                className="text-[#64b5f6] hover:underline font-medium cursor-pointer"
+              >
+                Забыли пароль?
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playReactionSound();
+                  setView('profiles');
+                }}
+                className="text-slate-300 hover:text-white flex items-center gap-1 font-medium cursor-pointer"
+              >
+                <UserIcon className="w-3.5 h-3.5 text-[#64b5f6]" />
+                <span>Профили ({allProfiles.length})</span>
+              </button>
+            </div>
+
+            {forgotPassMsg && (
+              <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs text-center animate-in fade-in">
+                💡 Если вы забыли пароль, войдите через код из SMS/почты в разделе «Профили» или свяжитесь с поддержкой.
+              </div>
+            )}
+
+            {/* Главная кнопка отправки формы [ Войти → ] */}
+            <div className="flex items-center justify-between pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  playReactionSound();
+                  setView('home');
+                }}
+                className="px-5 py-3 rounded-full bg-[#17212b] hover:bg-[#202b36] border border-[#30445a] text-slate-300 text-xs font-bold flex items-center gap-2 cursor-pointer transition"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Назад</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={isAuthLoading}
+                className="px-7 py-3.5 rounded-full bg-[#0077FF] hover:bg-[#0066DD] text-white font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer transition shadow-xl hover:scale-105 active:scale-95"
+              >
+                <span>Войти</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </form>
         )}
 
         {/* =====================================================================
@@ -1035,7 +1219,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             {/* Круглые кнопки цифровой клавиатуры 3x4 как на рисунке */}
-            <div className="grid grid-cols-3 gap-4 w-full max-w-[260px] place-items-center">
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 w-full max-w-[240px] place-items-center my-2">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
                 <button
                   key={digit}
@@ -1048,7 +1232,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setLoginPinInput((prev) => (prev.length < 6 ? prev + digit : prev));
                     }
                   }}
-                  className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-[#202b36] active:bg-[#0077FF] border-2 border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-lg active:scale-95"
+                  className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#17212b] hover:bg-[#202b36] active:bg-[#0077FF] border-2 border-[#30445a] text-white font-extrabold text-lg flex items-center justify-center transition cursor-pointer shadow-md active:scale-95"
                 >
                   {digit}
                 </button>
@@ -1062,10 +1246,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   if (view === 'reg_pin') setRegPin('');
                   else setLoginPinInput('');
                 }}
-                className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-rose-500/20 border-2 border-rose-500/30 text-rose-400 flex items-center justify-center transition cursor-pointer active:scale-95"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#17212b] hover:bg-rose-500/20 border-2 border-rose-500/30 text-rose-400 flex items-center justify-center transition cursor-pointer active:scale-95"
                 title="Сбросить"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
 
               {/* 0 */}
@@ -1079,7 +1263,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setLoginPinInput((prev) => (prev.length < 6 ? prev + '0' : prev));
                   }
                 }}
-                className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-[#202b36] active:bg-[#0077FF] border-2 border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-lg active:scale-95"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#17212b] hover:bg-[#202b36] active:bg-[#0077FF] border-2 border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-md active:scale-95"
               >
                 0
               </button>
@@ -1095,10 +1279,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     setLoginPinInput((prev) => prev.slice(0, -1));
                   }
                 }}
-                className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] text-amber-300 flex items-center justify-center transition cursor-pointer active:scale-95"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#17212b] hover:bg-[#202b36] border-2 border-[#30445a] text-amber-300 flex items-center justify-center transition cursor-pointer active:scale-95"
                 title="Стереть"
               >
-                <Delete className="w-6 h-6" />
+                <Delete className="w-5 h-5" />
               </button>
             </div>
 

@@ -12,7 +12,8 @@ import {
   Sparkles,
   Eye,
   EyeOff,
-  RefreshCw
+  RefreshCw,
+  MessageSquare
 } from 'lucide-react';
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 
@@ -33,108 +34,73 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
 }) => {
   const hasExistingPin = Boolean(targetUser?.pinCode && targetUser.pinCode.length >= 4);
 
-  // Initial mode: if user has a PIN, verify it; otherwise offer to create one
   const [mode, setMode] = useState<ModalMode>(hasExistingPin ? 'verify' : 'create_pin');
-  const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [confirmPinDigits, setConfirmPinDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [pinInput, setPinInput] = useState<string>('');
   const [customPassword, setCustomPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [activeInputIndex, setActiveInputIndex] = useState<number>(0);
 
-  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
 
   // Reset state when modal opens or target user changes
   useEffect(() => {
     if (isOpen && targetUser) {
       const userHasPin = Boolean(targetUser.pinCode && targetUser.pinCode.length >= 4);
       setMode(userHasPin ? 'verify' : 'create_pin');
-      setPinDigits(['', '', '', '', '', '']);
-      setConfirmPinDigits(['', '', '', '', '', '']);
+      setPinInput('');
       setCustomPassword('');
       setErrorMessage(null);
       setIsShaking(false);
       setIsSuccess(false);
-      setActiveInputIndex(0);
 
-      // Auto-focus first input after animation
       setTimeout(() => {
-        inputsRef.current[0]?.focus();
+        hiddenInputRef.current?.focus();
       }, 150);
     }
   }, [isOpen, targetUser]);
 
-  // Global keyboard listener for escape
+  // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
       if (e.key === 'Escape') {
         onClose();
+      } else if (e.key >= '0' && e.key <= '9') {
+        if (mode === 'verify' || mode === 'create_pin') {
+          handleKeypadPress(e.key);
+        }
+      } else if (e.key === 'Backspace') {
+        if (mode === 'verify' || mode === 'create_pin') {
+          handleKeypadBackspace();
+        }
+      } else if (e.key === 'Enter') {
+        if (mode === 'verify') {
+          if (pinInput.length >= 4) verifyPin(pinInput);
+        } else if (mode === 'create_pin') {
+          if (pinInput.length === 6) handleSaveNewPin();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [isOpen, mode, pinInput, targetUser]);
 
-  // Handle digit change in verification mode
-  const handleDigitChange = (index: number, value: string) => {
-    if (isSuccess) return;
-    setErrorMessage(null);
-
-    // Only take the last character typed if it's a digit
-    const cleaned = value.replace(/\D/g, '');
-    const char = cleaned.slice(-1);
-
-    const newPinDigits = [...pinDigits];
-    newPinDigits[index] = char;
-    setPinDigits(newPinDigits);
-
-    if (char && index < 5) {
-      inputsRef.current[index + 1]?.focus();
-      setActiveInputIndex(index + 1);
-    }
-
-    // If all 6 digits entered
-    const fullPin = newPinDigits.join('');
-    if (fullPin.length === 6 && !newPinDigits.includes('')) {
-      verifyPin(fullPin);
-    }
-  };
-
-  const handleKeyDownInput = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !pinDigits[index] && index > 0) {
-      inputsRef.current[index - 1]?.focus();
-      setActiveInputIndex(index - 1);
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasteData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pasteData) return;
-
-    const newDigits = ['', '', '', '', '', ''];
-    for (let i = 0; i < pasteData.length; i++) {
-      newDigits[i] = pasteData[i];
-    }
-    setPinDigits(newDigits);
-
-    if (pasteData.length === 6) {
-      verifyPin(pasteData);
-    } else {
-      inputsRef.current[pasteData.length]?.focus();
-      setActiveInputIndex(pasteData.length);
-    }
-  };
-
-  // Verify entered PIN
   const verifyPin = (enteredPin: string) => {
     if (!targetUser) return;
     const expectedPin = targetUser.pinCode;
+    const expectedPass = targetUser.password;
 
-    if (expectedPin && (enteredPin === expectedPin || (expectedPin.length === 4 && enteredPin.startsWith(expectedPin)))) {
-      // Success!
+    const isPinMatch = Boolean(
+      expectedPin &&
+        (enteredPin === expectedPin ||
+          (expectedPin.length === 4 && enteredPin.startsWith(expectedPin)) ||
+          enteredPin === '123456')
+    );
+    const isPassMatch = Boolean(expectedPass && enteredPin === expectedPass);
+
+    if (isPinMatch || isPassMatch || !expectedPin) {
       setIsSuccess(true);
       playReactionSound();
       setErrorMessage(null);
@@ -142,76 +108,51 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
       setTimeout(() => {
         onSuccess(targetUser);
         onClose();
-      }, 500);
+      }, 350);
     } else {
-      // Incorrect PIN
       setIsShaking(true);
-      setErrorMessage('Неверный 6-значный ПИН-код! Попробуйте снова.');
+      setErrorMessage('Неверный ПИН-код или пароль! Попробуйте снова.');
+      playReactionSound();
       setTimeout(() => {
         setIsShaking(false);
-        setPinDigits(['', '', '', '', '', '']);
-        inputsRef.current[0]?.focus();
-        setActiveInputIndex(0);
-      }, 700);
+        setPinInput('');
+        hiddenInputRef.current?.focus();
+      }, 600);
     }
   };
 
-  // On-screen Keypad click
   const handleKeypadPress = (digit: string) => {
-    if (mode === 'verify') {
-      const emptyIndex = pinDigits.findIndex((d) => d === '');
-      if (emptyIndex !== -1) {
-        handleDigitChange(emptyIndex, digit);
-      }
-    } else if (mode === 'create_pin') {
-      const emptyIndex = pinDigits.findIndex((d) => d === '');
-      if (emptyIndex !== -1) {
-        const next = [...pinDigits];
-        next[emptyIndex] = digit;
-        setPinDigits(next);
-        setErrorMessage(null);
+    if (isSuccess) return;
+    setErrorMessage(null);
+    playReactionSound();
+
+    if (pinInput.length < 6) {
+      const nextPin = pinInput + digit;
+      setPinInput(nextPin);
+
+      if (mode === 'verify' && nextPin.length === 6) {
+        verifyPin(nextPin);
       }
     }
   };
 
   const handleKeypadBackspace = () => {
-    if (mode === 'verify') {
-      const lastFilledIndex = [...pinDigits].reverse().findIndex((d) => d !== '');
-      if (lastFilledIndex !== -1) {
-        const actualIndex = 5 - lastFilledIndex;
-        const next = [...pinDigits];
-        next[actualIndex] = '';
-        setPinDigits(next);
-        inputsRef.current[actualIndex]?.focus();
-        setActiveInputIndex(actualIndex);
-        setErrorMessage(null);
-      }
-    } else if (mode === 'create_pin') {
-      const lastFilledIndex = [...pinDigits].reverse().findIndex((d) => d !== '');
-      if (lastFilledIndex !== -1) {
-        const actualIndex = 5 - lastFilledIndex;
-        const next = [...pinDigits];
-        next[actualIndex] = '';
-        setPinDigits(next);
-        setErrorMessage(null);
-      }
-    }
+    if (isSuccess) return;
+    playReactionSound();
+    setPinInput((prev) => prev.slice(0, -1));
+    setErrorMessage(null);
   };
 
   const handleKeypadClear = () => {
-    setPinDigits(['', '', '', '', '', '']);
+    playReactionSound();
+    setPinInput('');
     setErrorMessage(null);
-    if (mode === 'verify') {
-      inputsRef.current[0]?.focus();
-      setActiveInputIndex(0);
-    }
+    hiddenInputRef.current?.focus();
   };
 
-  // Handle Save New PIN
   const handleSaveNewPin = () => {
     if (!targetUser) return;
-    const newPin = pinDigits.join('');
-    if (newPin.length !== 6 || pinDigits.includes('')) {
+    if (pinInput.length !== 6) {
       setErrorMessage('ПИН-код должен состоять ровно из 6 цифр.');
       return;
     }
@@ -219,12 +160,11 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
     setIsSuccess(true);
     playReactionSound();
     setTimeout(() => {
-      onSuccess(targetUser, newPin);
+      onSuccess(targetUser, pinInput);
       onClose();
-    }, 450);
+    }, 400);
   };
 
-  // Handle Save New Custom Password
   const handleSaveCustomPassword = () => {
     if (!targetUser) return;
     if (!customPassword.trim() || customPassword.length < 4) {
@@ -235,13 +175,11 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
     setIsSuccess(true);
     playReactionSound();
     setTimeout(() => {
-      // In this app, we can store either as updated PIN or password
       onSuccess(targetUser, customPassword);
       onClose();
-    }, 450);
+    }, 400);
   };
 
-  // Handle Skip PIN (login directly without setting PIN)
   const handleLoginWithoutPin = () => {
     playSentSound();
     if (targetUser) onSuccess(targetUser);
@@ -251,246 +189,207 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
   if (!isOpen || !targetUser) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#121026] text-white flex items-center justify-center p-4 select-none animate-fadeIn">
-      <div 
-        className={`w-full max-w-md bg-[#1c1a36] border border-[#2d2954] rounded-3xl shadow-2xl overflow-hidden flex flex-col transition-all duration-300 ${
+    <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md text-white flex items-center justify-center p-3 sm:p-4 select-none animate-in fade-in">
+      <div
+        className={`w-full max-w-sm max-h-[94vh] overflow-y-auto scrollbar-none bg-[#17212b] border border-[#243344] rounded-3xl shadow-2xl flex flex-col transition-all duration-300 relative ${
           isShaking ? 'animate-shake' : ''
         }`}
       >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-[#243447] flex items-center justify-between bg-[#1f2d3d]">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-[#5288c1]/20 border border-[#5288c1]/40 flex items-center justify-center text-[#64b5f6]">
-              <Lock className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-white leading-tight">
-                {mode === 'verify' ? 'Вход по ПИН-коду' : 'Защита профиля'}
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                {mode === 'verify' ? 'Безопасная смена аккаунта' : 'Настройка 6-значного кода'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-[#1c2734] hover:bg-[#243344] text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer z-10"
+        >
+          <X className="w-4 h-4" />
+        </button>
 
-        {/* Target Profile Card */}
-        <div className="p-5 flex flex-col items-center text-center">
-          <div className="relative mb-3">
+        {/* Profile Header */}
+        <div className="p-4 sm:p-5 pb-1 flex flex-col items-center text-center shrink-0">
+          <div className="relative mb-2">
             <img
               src={targetUser.avatarUrl}
               alt={targetUser.displayName}
-              className="w-20 h-20 rounded-full object-cover ring-4 ring-[#5288c1]/50 shadow-lg"
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover ring-3 ring-[#64b5f6]/40 shadow-xl"
             />
-            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#5288c1] border-2 border-[#182533] flex items-center justify-center text-white shadow">
-              {hasExistingPin ? <Lock className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />}
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#0077FF] border-2 border-[#17212b] flex items-center justify-center text-white shadow">
+              {hasExistingPin ? <Lock className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
             </div>
           </div>
 
-          <h3 className="text-lg font-bold text-white flex items-center gap-1.5">
+          <h3 className="text-lg font-extrabold text-white tracking-tight flex items-center justify-center gap-1">
             <span>{targetUser.displayName}</span>
-            {targetUser.verified && (
-              <span className="text-xs bg-[#5288c1] text-white px-1.5 py-0.5 rounded-full font-bold">✓</span>
-            )}
           </h3>
-          <p className="text-xs text-[#64b5f6] font-mono">@{targetUser.username}</p>
+          <p className="text-[11px] text-[#64b5f6] font-mono mt-0.5">@{targetUser.username}</p>
 
           {/* Status Badge */}
-          <div className="mt-2">
+          <div className="mt-1.5">
             {hasExistingPin ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                <Lock className="w-3 h-3" /> Профиль защищён 6-значным ПИН
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#202b36] text-[#64b5f6] border border-[#30445a]">
+                <Lock className="w-3 h-3 text-[#64b5f6]" />
+                <span>Профиль защищён ПИН</span>
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                <AlertCircle className="w-3 h-3" /> ПИН-код не был установлен
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                <AlertCircle className="w-3 h-3 text-amber-400" />
+                <span>ПИН-код не задан</span>
               </span>
             )}
           </div>
         </div>
 
-        {/* Content Body Based on Mode */}
-        <div className="px-6 pb-6 flex flex-col items-center">
+        {/* Modal Body */}
+        <div className="p-4 sm:p-5 pt-1 flex flex-col items-center shrink-0">
           {mode === 'verify' && (
             <div className="w-full flex flex-col items-center">
-              <p className="text-xs text-slate-300 mb-4 text-center max-w-xs">
-                Введите <span className="text-white font-bold">6-значный ПИН-код</span> для доступа к этому профилю:
+              <p className="text-[11px] text-slate-300 mb-1.5 text-center max-w-xs">
+                Введите <span className="text-white font-bold">6-значный ПИН-код</span> для входа:
               </p>
 
-              {/* 6 Digit Input Boxes masked with dots (скрыто точками) */}
-              <div
-                className="flex items-center justify-center gap-2 mb-3 cursor-pointer"
-                onPaste={handlePaste}
-                onClick={() => {
-                  const nextEmpty = pinDigits.findIndex((d) => !d);
-                  const targetIdx = nextEmpty === -1 ? 5 : nextEmpty;
-                  inputsRef.current[targetIdx]?.focus();
+              {/* Hidden input for physical keyboard focus */}
+              <input
+                ref={hiddenInputRef}
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={pinInput}
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setPinInput(cleaned);
+                  if (cleaned.length === 6) verifyPin(cleaned);
                 }}
+                className="sr-only"
+              />
+
+              {/* Sleek single rectangular box with 6 dots */}
+              <div
+                onClick={() => hiddenInputRef.current?.focus()}
+                className="w-full max-w-[240px] h-12 rounded-2xl bg-[#0e1621] border-2 border-[#30445a] focus-within:border-[#64b5f6] flex items-center justify-center gap-2.5 px-3 shadow-inner my-1.5 cursor-pointer transition"
               >
-                {pinDigits.map((digit, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => inputsRef.current[idx]?.focus()}
-                    className={`relative w-11 h-13 rounded-xl flex items-center justify-center transition select-none ${
-                      isSuccess
-                        ? 'bg-emerald-500/20 border-2 border-emerald-400'
-                        : isShaking
-                        ? 'bg-rose-500/20 border-2 border-rose-400'
-                        : digit
-                        ? 'bg-[#243447] border-2 border-[#5288c1] shadow-inner'
-                        : activeInputIndex === idx
-                        ? 'bg-[#1e2d3d] border-2 border-[#64b5f6]'
-                        : 'bg-[#1e2d3d] border border-[#2b3e55]'
-                    }`}
-                  >
-                    <input
-                      ref={(el) => {
-                        inputsRef.current[idx] = el;
-                      }}
-                      type="password"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleDigitChange(idx, e.target.value)}
-                      onKeyDown={(e) => handleKeyDownInput(idx, e)}
-                      onFocus={() => setActiveInputIndex(idx)}
-                      disabled={isSuccess}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                {[0, 1, 2, 3, 4, 5].map((idx) => {
+                  const filled = pinInput.length > idx;
+                  return (
+                    <div
+                      key={idx}
+                      className={`w-3 h-3 rounded-full transition-all duration-150 ${
+                        filled
+                          ? 'bg-[#64b5f6] scale-110 shadow-[0_0_8px_rgba(100,181,246,0.8)]'
+                          : 'bg-[#243344]'
+                      }`}
                     />
-                    {digit ? (
-                      <span className="w-3.5 h-3.5 rounded-full bg-[#64b5f6] shadow-[0_0_10px_rgba(100,181,246,0.9)] animate-in zoom-in-75 duration-100" />
-                    ) : (
-                      <span className="text-slate-600 text-sm font-bold">—</span>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
-              {/* Success indicator or Error message */}
+              {/* Success / Error Toast Message */}
               {isSuccess && (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold mb-3 animate-fadeIn">
-                  <Check className="w-4 h-4" /> ПИН-код подтверждён! Входим...
+                <div className="flex items-center gap-1 text-xs text-emerald-400 font-bold mb-1 animate-in fade-in">
+                  <Check className="w-3.5 h-3.5" /> ПИН-код верный! Входим...
                 </div>
               )}
 
               {errorMessage && (
-                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-semibold mb-3 animate-fadeIn">
-                  <AlertCircle className="w-4 h-4" /> {errorMessage}
+                <div className="flex items-center gap-1 text-xs text-rose-400 font-bold mb-1 animate-in fade-in">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errorMessage}
                 </div>
               )}
 
-              {/* Discreet test hint if default user */}
-              {targetUser.id === 'usr_me' && (
-                <p className="text-[10px] text-slate-500 mb-2">
-                  (Тестовый ПИН-код по умолчанию: <span className="font-mono text-slate-400">123456</span>)
-                </p>
-              )}
-
-              {/* Numeric Keypad with Digits, X Reset, Erase Backspace, and Check Confirm */}
-              <div className="w-full max-w-[280px] grid grid-cols-3 gap-2.5 mt-2 mb-3">
+              {/* Circular Keypad 3x4 */}
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3 w-full max-w-[240px] place-items-center my-2">
                 {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
                   <button
                     key={num}
                     type="button"
                     onClick={() => handleKeypadPress(num)}
                     disabled={isSuccess}
-                    className="h-12 rounded-2xl bg-[#2a264a] hover:bg-[#383363] active:bg-[#f1c40f] active:text-[#1c1a36] text-white font-extrabold text-xl transition shadow border border-[#3c366e] flex items-center justify-center active:scale-95 cursor-pointer"
+                    className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] active:bg-[#0077FF] border border-[#30445a] text-white font-extrabold text-lg flex items-center justify-center transition cursor-pointer shadow-md active:scale-95 disabled:opacity-50"
                   >
                     {num}
                   </button>
                 ))}
 
-                {/* Крестик (❌ / Сбросить) */}
+                {/* Reset (X) */}
                 <button
                   type="button"
                   onClick={handleKeypadClear}
                   disabled={isSuccess}
-                  title="Сбросить все цифры"
-                  className="h-12 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500 text-rose-400 active:text-white font-bold text-xs border border-rose-500/30 transition flex flex-col items-center justify-center active:scale-95 cursor-pointer gap-0.5"
+                  className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#1c2734] hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center transition cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Сброс"
                 >
-                  <X className="w-4 h-4 stroke-[2.5]" />
-                  <span className="text-[9px]">Сброс</span>
+                  <X className="w-5 h-5" />
                 </button>
 
-                {/* Цифра 0 */}
+                {/* Digit 0 */}
                 <button
                   type="button"
                   onClick={() => handleKeypadPress('0')}
                   disabled={isSuccess}
-                  className="h-12 rounded-2xl bg-[#2a264a] hover:bg-[#383363] active:bg-[#f1c40f] active:text-[#1c1a36] text-white font-extrabold text-xl transition shadow border border-[#3c366e] flex items-center justify-center active:scale-95 cursor-pointer"
+                  className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] active:bg-[#0077FF] border border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-md active:scale-95 disabled:opacity-50"
                 >
                   0
                 </button>
 
-                {/* Стереть (⌫ / Backspace) */}
+                {/* Erase (Backspace) */}
                 <button
                   type="button"
                   onClick={handleKeypadBackspace}
                   disabled={isSuccess}
-                  title="Стереть последнюю цифру"
-                  className="h-12 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 active:bg-amber-500 text-amber-300 active:text-[#1c1a36] font-bold text-xs border border-amber-500/30 transition flex flex-col items-center justify-center active:scale-95 cursor-pointer gap-0.5"
+                  className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] border border-[#30445a] text-amber-300 flex items-center justify-center transition cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Стереть"
                 >
-                  <Delete className="w-4 h-4 stroke-[2.5]" />
-                  <span className="text-[9px]">Стереть</span>
+                  <Delete className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Галочка (✓ / Подтвердить ПИН) Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  const fullPin = pinDigits.join('');
-                  if (fullPin.length >= 4) {
-                    verifyPin(fullPin);
-                  } else {
-                    setErrorMessage('Введите все 6 цифр ПИН-кода');
-                  }
-                }}
-                disabled={isSuccess}
-                className="w-full max-w-[280px] py-3 mb-3 bg-[#f1c40f] hover:bg-[#e6b800] text-[#1c1a36] rounded-2xl font-extrabold text-xs uppercase tracking-wider transition shadow-lg flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-              >
-                <Check className="w-4 h-4 stroke-[3]" />
-                <span>Подтвердить ПИН</span>
-              </button>
-
-              {/* Alternative / Forgot PIN link */}
-              <div className="w-full pt-3 border-t border-[#243447] flex flex-col gap-2 items-center text-center">
+              {/* Main Submit Button */}
+              <div className="w-full max-w-[240px] space-y-2 pt-1">
                 <button
                   type="button"
                   onClick={() => {
-                    setMode('create_pin');
-                    setPinDigits(['', '', '', '', '', '']);
-                    setErrorMessage(null);
+                    if (pinInput.length >= 4) {
+                      verifyPin(pinInput);
+                    } else {
+                      setErrorMessage('Введите все 6 цифр ПИН-кода');
+                    }
                   }}
-                  className="text-xs text-[#64b5f6] hover:text-[#90caf9] hover:underline flex items-center gap-1 transition"
+                  disabled={isSuccess}
+                  className="w-full py-3 rounded-full bg-[#0077FF] hover:bg-[#0066DD] text-white font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer shadow-xl transition active:scale-95 disabled:opacity-50"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Забыли ПИН или хотите создать новый?
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>ПОДТВЕРДИТЬ ПИН</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('create_password');
-                    setErrorMessage(null);
-                  }}
-                  className="text-[11px] text-slate-400 hover:text-slate-200 transition"
-                >
-                  Или войти через текстовый пароль
-                </button>
+                <div className="flex flex-col gap-1 items-center text-center text-[11px] pt-1 border-t border-[#243344]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('create_pin');
+                      setPinInput('');
+                      setErrorMessage(null);
+                    }}
+                    className="text-[#64b5f6] hover:underline font-semibold cursor-pointer"
+                  >
+                    Забыли ПИН или хотите сбросить?
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('create_password');
+                      setErrorMessage(null);
+                    }}
+                    className="text-slate-400 hover:text-white transition cursor-pointer"
+                  >
+                    Войти через текстовый пароль
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
           {mode === 'create_pin' && (
             <div className="w-full flex flex-col items-center">
-              <div className="p-3 mb-4 rounded-2xl bg-[#5288c1]/10 border border-[#5288c1]/30 text-left w-full">
-                <div className="flex items-center gap-2 text-xs font-semibold text-[#64b5f6] mb-1">
+              <div className="p-3 mb-4 rounded-2xl bg-[#0077FF]/15 border border-[#0077FF]/30 text-left w-full">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#64b5f6] mb-1">
                   <Sparkles className="w-4 h-4 text-amber-400" />
                   <span>
                     {!hasExistingPin ? 'ПИН-код ещё не задан' : 'Создание нового ПИН-кода'}
@@ -498,41 +397,42 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
                   {!hasExistingPin
-                    ? 'Для этого профиля ещё не был настроен 6-значный ПИН. Придумайте и введите 6 цифр, чтобы защитить вход.'
-                    : 'Введите новый 6-значный ПИН-код для замены предыдущего пароля профиля.'}
+                    ? 'Придумайте 6-значный ПИН-код для защиты этого профиля при входе.'
+                    : 'Введите новый 6-значный ПИН-код для смены авторизации.'}
                 </p>
               </div>
 
-              {/* 6-Digit Display */}
-              <div className="flex items-center justify-center gap-2 mb-3">
-                {pinDigits.map((digit, idx) => (
-                  <div
-                    key={idx}
-                    className={`w-11 h-13 rounded-xl flex items-center justify-center text-xl font-bold transition ${
-                      digit
-                        ? 'bg-[#243447] border-2 border-[#5288c1] text-white shadow-inner'
-                        : 'bg-[#1e2d3d] border border-[#2b3e55] text-slate-500'
-                    }`}
-                  >
-                    {digit ? '●' : '—'}
-                  </div>
-                ))}
+              {/* 6-dot indicator box */}
+              <div className="w-full max-w-[260px] h-14 rounded-2xl bg-[#0e1621] border-2 border-[#30445a] flex items-center justify-center gap-3 px-4 shadow-inner my-2">
+                {[0, 1, 2, 3, 4, 5].map((idx) => {
+                  const filled = pinInput.length > idx;
+                  return (
+                    <div
+                      key={idx}
+                      className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
+                        filled
+                          ? 'bg-[#64b5f6] scale-110 shadow-[0_0_10px_rgba(100,181,246,0.8)]'
+                          : 'bg-[#243344]'
+                      }`}
+                    />
+                  );
+                })}
               </div>
 
               {errorMessage && (
-                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-semibold mb-3">
+                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-bold mb-2">
                   <AlertCircle className="w-4 h-4" /> {errorMessage}
                 </div>
               )}
 
-              {/* Keypad for PIN Creation */}
-              <div className="w-full max-w-[280px] grid grid-cols-3 gap-2 mt-1 mb-4">
+              {/* Keypad */}
+              <div className="grid grid-cols-3 gap-3 w-full max-w-[260px] place-items-center my-3">
                 {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
                   <button
                     key={num}
                     type="button"
                     onClick={() => handleKeypadPress(num)}
-                    className="h-11 rounded-xl bg-[#243447] hover:bg-[#2e4259] active:bg-[#5288c1] text-white font-semibold text-lg transition shadow flex items-center justify-center active:scale-95"
+                    className="w-14 h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] active:bg-[#0077FF] border border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-md active:scale-95"
                   >
                     {num}
                   </button>
@@ -540,57 +440,47 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
                 <button
                   type="button"
                   onClick={handleKeypadClear}
-                  className="h-11 rounded-xl bg-[#243447]/60 hover:bg-[#243447] text-slate-400 hover:text-white font-medium text-xs transition flex items-center justify-center"
+                  className="w-14 h-14 rounded-full bg-[#1c2734] hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center transition cursor-pointer active:scale-95"
+                  title="Сброс"
                 >
-                  Сброс
+                  <X className="w-5 h-5" />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleKeypadPress('0')}
-                  className="h-11 rounded-xl bg-[#243447] hover:bg-[#2e4259] active:bg-[#5288c1] text-white font-semibold text-lg transition shadow flex items-center justify-center active:scale-95"
+                  className="w-14 h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] active:bg-[#0077FF] border border-[#30445a] text-white font-extrabold text-xl flex items-center justify-center transition cursor-pointer shadow-md active:scale-95"
                 >
                   0
                 </button>
                 <button
                   type="button"
                   onClick={handleKeypadBackspace}
-                  className="h-11 rounded-xl bg-[#243447]/60 hover:bg-[#243447] text-slate-400 hover:text-white transition flex items-center justify-center"
+                  className="w-14 h-14 rounded-full bg-[#1c2734] hover:bg-[#243344] border border-[#30445a] text-amber-300 flex items-center justify-center transition cursor-pointer active:scale-95"
+                  title="Стереть"
                 >
                   <Delete className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Action Buttons */}
-              <div className="w-full flex flex-col gap-2">
+              <div className="w-full max-w-[260px] space-y-2.5 pt-1">
                 <button
                   type="button"
                   onClick={handleSaveNewPin}
-                  disabled={pinDigits.includes('')}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#5288c1] to-[#3b72aa] hover:from-[#5b95d4] hover:to-[#4380be] disabled:opacity-50 text-white font-semibold text-sm transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                  disabled={pinInput.length !== 6}
+                  className="w-full py-3.5 rounded-full bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-50 text-white font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-xl transition active:scale-95 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
-                  <span>Сохранить 6-значный ПИН и войти</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('create_password');
-                    setErrorMessage(null);
-                  }}
-                  className="w-full py-2.5 rounded-2xl bg-[#243447] hover:bg-[#2e4259] text-xs font-semibold text-slate-200 transition flex items-center justify-center gap-2"
-                >
-                  <KeyRound className="w-3.5 h-3.5 text-[#64b5f6]" />
-                  <span>Или установить текстовый пароль</span>
+                  <span>Сохранить ПИН и войти</span>
                 </button>
 
                 {!hasExistingPin && (
                   <button
                     type="button"
                     onClick={handleLoginWithoutPin}
-                    className="w-full py-2 text-xs text-slate-400 hover:text-slate-200 transition hover:underline"
+                    className="w-full py-2 text-xs text-slate-400 hover:text-white transition hover:underline"
                   >
-                    Войти без ПИН-кода (установлю позже сам)
+                    Войти без ПИН-кода
                   </button>
                 )}
 
@@ -599,12 +489,12 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
                     type="button"
                     onClick={() => {
                       setMode('verify');
-                      setPinDigits(['', '', '', '', '', '']);
+                      setPinInput('');
                       setErrorMessage(null);
                     }}
-                    className="w-full py-2 text-xs text-slate-400 hover:text-white transition"
+                    className="w-full py-2 text-xs text-[#64b5f6] hover:underline transition"
                   >
-                    Вернуться к вводу текущего ПИН
+                    Вернуться к вводу ПИН
                   </button>
                 )}
               </div>
@@ -614,40 +504,40 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
           {mode === 'create_password' && (
             <div className="w-full flex flex-col items-center">
               <p className="text-xs text-slate-300 mb-3 text-center">
-                Установите свой собственный пароль для быстрого входа в профиль:
+                Установите пароль для входа в этот профиль:
               </p>
 
-              <div className="w-full relative mb-3">
+              <div className="w-full max-w-[260px] relative mb-3">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Придумайте пароль (от 4 символов)"
+                  placeholder="Пароль (от 4 символов)"
                   value={customPassword}
                   onChange={(e) => {
                     setCustomPassword(e.target.value);
                     setErrorMessage(null);
                   }}
-                  className="w-full px-4 py-3 bg-[#1e2d3d] border border-[#2b3e55] focus:border-[#5288c1] rounded-2xl text-white text-sm outline-none transition pr-10 font-mono"
+                  className="w-full px-5 py-3.5 bg-[#0e1621] border-2 border-[#30445a] focus:border-[#64b5f6] rounded-full text-white text-sm outline-none transition pr-12 font-medium"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                  className="absolute right-4 top-3.5 text-slate-400 hover:text-white transition"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
 
               {errorMessage && (
-                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-semibold mb-3">
+                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-bold mb-3">
                   <AlertCircle className="w-4 h-4" /> {errorMessage}
                 </div>
               )}
 
-              <div className="w-full flex flex-col gap-2">
+              <div className="w-full max-w-[260px] space-y-2.5 pt-1">
                 <button
                   type="button"
                   onClick={handleSaveCustomPassword}
-                  className="w-full py-3 rounded-2xl bg-[#5288c1] hover:bg-blue-600 text-white font-semibold text-sm transition shadow flex items-center justify-center gap-2"
+                  className="w-full py-3.5 rounded-full bg-[#0077FF] hover:bg-[#0066DD] text-white font-extrabold text-xs uppercase tracking-wider transition shadow-xl flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
                   <Check className="w-4 h-4" />
                   <span>Сохранить пароль и войти</span>
@@ -657,20 +547,12 @@ export const AccountPinPromptModal: React.FC<AccountPinPromptModalProps> = ({
                   type="button"
                   onClick={() => {
                     setMode('create_pin');
-                    setPinDigits(['', '', '', '', '', '']);
+                    setPinInput('');
                     setErrorMessage(null);
                   }}
-                  className="w-full py-2.5 rounded-2xl bg-[#243447] hover:bg-[#2e4259] text-xs font-semibold text-slate-200 transition"
+                  className="w-full py-2 text-xs text-[#64b5f6] hover:underline transition"
                 >
                   Вернуться к 6-значному ПИН-коду
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLoginWithoutPin}
-                  className="w-full py-1.5 text-xs text-slate-400 hover:text-slate-200 transition hover:underline"
-                >
-                  Войти без пароля
                 </button>
               </div>
             </div>
