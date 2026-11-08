@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/server.js --external:express --external:dotenv --external:vite --external:pg",
+    "build": "vite build",
+    "build:full": "vite build && esbuild server.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/server.js --external:express --external:dotenv --external:vite --external:pg",
     "start": "node dist/server.js",
     "deploy": "npm run build",
     "preview": "vite preview",
@@ -19,6 +20,7 @@
     "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "firebase": "^13.2.0",
     "hls.js": "^1.7.4",
@@ -38,7 +40,6 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
