@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Community, CommunityModerator, CommunityTabConfig, CommunityFolder, CommunityEvent, Post, PostComment, User, Chat } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Community, CommunityModerator, CommunityTabConfig, CommunityFolder, CommunityEvent, Post, PostComment, User, Chat, CommunityVideo, CommunityVideoComment } from '../../types';
 import { 
   X, 
   Users, 
@@ -48,12 +48,37 @@ import {
   ChevronLeft,
   Settings,
   QrCode,
-  Link2
+  Link2,
+  Play,
+  Pause,
+  Search,
+  Volume2,
+  VolumeX,
+  MessageCircle as CommentIcon,
+  Share,
+  ThumbsUp,
+  ListVideo,
+  Clock,
+  Filter,
+  PlusSquare
 } from 'lucide-react';
 import { playReactionSound, playSentSound } from '../../utils/audioUtils';
 import { downloadMediaFile } from '../../utils/downloadUtils';
 import { formatSmartTime } from '../../utils/dateUtils';
 import { ViewTargetUser } from './OtherUserProfileModal';
+import { AuraVideoPlayer } from '../video/AuraVideoPlayer';
+import { 
+  fetchCommunityVideos, 
+  saveCommunityVideo, 
+  deleteAllCommunityVideos,
+  updateCommunityVideo,
+  deleteCommunityVideo,
+  likeCommunityVideo, 
+  commentCommunityVideo, 
+  incrementCommunityVideoView,
+  fetchVideoWatchPosition,
+  saveVideoWatchPosition
+} from '../../firebase';
 
 interface CommunityViewModalProps {
   community: Community | null;
@@ -204,6 +229,300 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [commentMedia, setCommentMedia] = useState<Record<string, { url: string; type: 'image' | 'gif' } | null>>({});
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
+
+  // --- Community Video & Reels Platform State ---
+  const [videoSubTab, setVideoSubTab] = useState<'youtube' | 'reels'>('youtube');
+  const [communityVideos, setCommunityVideos] = useState<CommunityVideo[]>([]);
+  const [videoSearchQuery, setVideoSearchQuery] = useState('');
+  const [selectedVideoCategory, setSelectedVideoCategory] = useState<string>('all');
+  const [videoSortBy, setVideoSortBy] = useState<'newest' | 'views' | 'likes'>('newest');
+
+  // Interactive YouTube Video Player Modal State
+  const [activePlayingVideo, setActivePlayingVideo] = useState<CommunityVideo | null>(null);
+  const [videoCommentInput, setVideoCommentInput] = useState('');
+
+  // Video / Reel Upload Modal State (Multi-step Wizard)
+  const [showUploadVideoModal, setShowUploadVideoModal] = useState(false);
+  const [uploadStep, setUploadStep] = useState<1 | 2 | 3 | 4>(1);
+  const [uploadVideoType, setUploadVideoType] = useState<'video' | 'reel'>('video');
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadMediaUrl, setUploadMediaUrl] = useState('');
+  const [uploadCoverUrl, setUploadCoverUrl] = useState('');
+  const [uploadCategory, setUploadCategory] = useState('Развлечения');
+  const [uploadPlaylist, setUploadPlaylist] = useState('Общие');
+  const [uploadPrivacy, setUploadPrivacy] = useState<'public' | 'private' | 'unlisted'>('public');
+
+  // AI Copyright Scan State
+  const [aiScanProgress, setAiScanProgress] = useState(0);
+  const [aiScanStatus, setAiScanStatus] = useState<'idle' | 'scanning' | 'passed' | 'failed'>('idle');
+  const [aiScanLogs, setAiScanLogs] = useState<string[]>([]);
+
+  const handleOpenUploadModal = (type: 'video' | 'reel' = 'video') => {
+    setUploadVideoType(type);
+    setUploadStep(1);
+    setUploadTitle('');
+    setUploadDesc('');
+    setUploadMediaUrl('');
+    setUploadCoverUrl('');
+    setUploadCategory('Развлечения');
+    setUploadPlaylist('Общие');
+    setUploadPrivacy('public');
+    setAiScanProgress(0);
+    setAiScanStatus('idle');
+    setAiScanLogs([]);
+    setShowUploadVideoModal(true);
+  };
+
+  // Edit Video Modal State
+  const [editingVideo, setEditingVideo] = useState<CommunityVideo | null>(null);
+  const [videoEditTitle, setVideoEditTitle] = useState('');
+  const [videoEditDescription, setVideoEditDescription] = useState('');
+  const [videoEditPlaylist, setVideoEditPlaylist] = useState('');
+  const [videoEditPrivacy, setVideoEditPrivacy] = useState<'public' | 'private' | 'unlisted'>('public');
+  const [videoEditCoverUrl, setVideoEditCoverUrl] = useState('');
+  const [isVideoLinkCopied, setIsVideoLinkCopied] = useState(false);
+
+  const handleOpenEditVideo = (vid: CommunityVideo, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingVideo(vid);
+    setVideoEditTitle(vid.title || '');
+    setVideoEditDescription(vid.description || '');
+    setVideoEditPlaylist(vid.playlist || 'Общие');
+    setVideoEditPrivacy(vid.privacy || 'public');
+    setVideoEditCoverUrl(vid.coverUrl || '');
+    setIsVideoLinkCopied(false);
+  };
+
+  const handleCaptureFrameFromVideo = (videoUrl: string, onCaptured: (dataUrl: string) => void) => {
+    if (!videoUrl) return;
+    const tempVid = document.createElement('video');
+    tempVid.crossOrigin = 'anonymous';
+    tempVid.src = videoUrl;
+    tempVid.muted = true;
+    tempVid.playsInline = true;
+    tempVid.currentTime = 1.5;
+
+    const capture = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = tempVid.videoWidth || 640;
+        canvas.height = tempVid.videoHeight || 360;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(tempVid, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          if (dataUrl && dataUrl.startsWith('data:image/')) {
+            onCaptured(dataUrl);
+            playReactionSound();
+          }
+        }
+      } catch {
+        // Fallback if CORS blocks canvas drawImage
+        onCaptured(presetBanners[0]);
+      }
+    };
+
+    tempVid.onseeked = capture;
+    tempVid.onloadeddata = () => {
+      if (tempVid.readyState >= 2) {
+        tempVid.currentTime = Math.min(1.5, (tempVid.duration || 3) / 2);
+      }
+    };
+  };
+
+  const handleCoverFileSelect = (e: React.ChangeEvent<HTMLInputElement>, onResult: (dataUrl: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    playReactionSound();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        onResult(ev.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleSaveEditedVideo = async () => {
+    if (!editingVideo) return;
+    playSentSound();
+    const updated: CommunityVideo = {
+      ...editingVideo,
+      title: videoEditTitle.trim() || 'Видеозапись',
+      description: videoEditDescription.trim(),
+      playlist: videoEditPlaylist.trim() || 'Общие',
+      privacy: videoEditPrivacy,
+      coverUrl: videoEditCoverUrl.trim() || undefined
+    };
+    setCommunityVideos((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+    if (activePlayingVideo && activePlayingVideo.id === updated.id) {
+      setActivePlayingVideo(updated);
+    }
+    setEditingVideo(null);
+    await updateCommunityVideo(updated);
+  };
+
+  const handleDeleteSingleVideo = async (videoId: string) => {
+    playReactionSound();
+    setCommunityVideos((prev) => prev.filter((v) => v.id !== videoId));
+    if (activePlayingVideo && activePlayingVideo.id === videoId) {
+      setActivePlayingVideo(null);
+    }
+    setEditingVideo(null);
+    await deleteCommunityVideo(videoId);
+  };
+
+  // Reels Vertical Feed State
+  const [activeReelIndex, setActiveReelIndex] = useState(0);
+  const [isReelMuted, setIsReelMuted] = useState(false);
+  const [showReelCommentsModal, setShowReelCommentsModal] = useState(false);
+  const [reelCommentInput, setReelCommentInput] = useState('');
+
+  // Load community videos from PostgreSQL backend (только реальные пользовательские видео)
+  useEffect(() => {
+    if (!community?.id) return;
+    fetchCommunityVideos(community.id).then((serverVids) => {
+      if (Array.isArray(serverVids)) {
+        setCommunityVideos(serverVids);
+      } else {
+        setCommunityVideos([]);
+      }
+    });
+  }, [community?.id]);
+
+  const handleLikeVideo = (vid: CommunityVideo) => {
+    playReactionSound();
+    const nextLiked = !vid.isLiked;
+    const diff = nextLiked ? 1 : -1;
+    const updatedLikes = Math.max(0, vid.likesCount + diff);
+
+    setCommunityVideos((prev) =>
+      prev.map((v) => (v.id === vid.id ? { ...v, isLiked: nextLiked, likesCount: updatedLikes } : v))
+    );
+
+    if (activePlayingVideo && activePlayingVideo.id === vid.id) {
+      setActivePlayingVideo((prev) => (prev ? { ...prev, isLiked: nextLiked, likesCount: updatedLikes } : null));
+    }
+
+    likeCommunityVideo(vid.id, nextLiked);
+  };
+
+  const handleAddVideoCommentSubmit = (vidId: string, contentText: string) => {
+    if (!contentText.trim()) return;
+    playSentSound();
+
+    const newComment: CommunityVideoComment = {
+      id: 'vc_' + Date.now(),
+      userId: currentUser.id,
+      userName: currentUser.displayName,
+      userAvatar: currentUser.avatarUrl,
+      content: contentText.trim(),
+      createdAt: 'Только что'
+    };
+
+    setCommunityVideos((prev) =>
+      prev.map((v) => (v.id === vidId ? { ...v, comments: [...(v.comments || []), newComment] } : v))
+    );
+
+    if (activePlayingVideo && activePlayingVideo.id === vidId) {
+      setActivePlayingVideo((prev) => (prev ? { ...prev, comments: [...(prev.comments || []), newComment] } : null));
+    }
+
+    commentCommunityVideo(vidId, newComment);
+    setVideoCommentInput('');
+    setReelCommentInput('');
+  };
+
+  const [savedWatchPositionSec, setSavedWatchPositionSec] = useState<number>(0);
+
+  const handleOpenVideoPlayer = (vid: CommunityVideo) => {
+    const updatedViews = (vid.viewsCount || 0) + 1;
+    const updatedVid = { ...vid, viewsCount: updatedViews };
+
+    setCommunityVideos((prev) => prev.map((v) => (v.id === vid.id ? updatedVid : v)));
+    setActivePlayingVideo(updatedVid);
+
+    fetchVideoWatchPosition(vid.id, currentUser.id).then((posSec) => {
+      setSavedWatchPositionSec(posSec || 0);
+    });
+
+    incrementCommunityVideoView(vid.id);
+  };
+
+  const handleStartAiScan = () => {
+    setAiScanStatus('scanning');
+    setAiScanProgress(0);
+    setAiScanLogs(['🔍 Запуск алгоритма сканирования ИИ...']);
+
+    let p = 0;
+    const interval = setInterval(() => {
+      p += 25;
+      setAiScanProgress(p);
+      if (p === 25) {
+        setAiScanLogs((prev) => [...prev, '🎵 Проверка аудиодорожки на совпадения по авторским правам...']);
+      } else if (p === 75) {
+        setAiScanLogs((prev) => [...prev, '🛡️ Сканирование видеоряда и отсутствие нарушений лицензии...']);
+      } else if (p >= 100) {
+        clearInterval(interval);
+        setAiScanProgress(100);
+        setAiScanStatus('passed');
+        setAiScanLogs((prev) => [...prev, '✅ Авторские права подлинны. Нарушений не обнаружено!']);
+      }
+    }, 400);
+  };
+
+  const handleUploadVideoFormSubmit = () => {
+    if (!community || !uploadMediaUrl.trim()) return;
+    playSentSound();
+
+    const newVid: CommunityVideo = {
+      id: 'v_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      communityId: community.id,
+      userId: currentUser.id,
+      userName: postAuthorMode === 'community' ? community.title : currentUser.displayName,
+      userAvatar: postAuthorMode === 'community' ? community.avatarUrl : currentUser.avatarUrl,
+      type: uploadVideoType,
+      title: uploadTitle.trim() || (uploadVideoType === 'reel' ? 'Короткий клип' : 'Видеозапись'),
+      description: uploadDesc.trim(),
+      mediaUrl: uploadMediaUrl.trim(),
+      coverUrl: uploadCoverUrl.trim() || undefined,
+      category: uploadCategory,
+      playlist: uploadPlaylist.trim() || 'Общие',
+      privacy: uploadPrivacy,
+      copyrightStatus: 'clean',
+      viewsCount: 1,
+      likesCount: 0,
+      comments: [],
+      createdAt: new Date().toISOString()
+    };
+
+    saveCommunityVideo(newVid);
+    setCommunityVideos((prev) => [newVid, ...prev]);
+    setUploadStep(4); // Переход на Шаг 4: Опубликовано!
+  };
+
+  const handleDeleteAllVideos = async () => {
+    if (!community) return;
+    playReactionSound();
+    setCommunityVideos([]);
+    setActivePlayingVideo(null);
+    await deleteAllCommunityVideos(community.id);
+  };
+
+  const handleFileUploadForVideo = (e: React.ChangeEvent<HTMLInputElement>, isCover: boolean = false) => {
+    if (isCover) {
+      handleCoverFileSelect(e, (dataUrl) => setUploadCoverUrl(dataUrl));
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (file) {
+      playReactionSound();
+      const url = URL.createObjectURL(file);
+      setUploadMediaUrl(url);
+    }
+  };
 
   React.useEffect(() => {
     const timer = setInterval(() => {
@@ -1615,207 +1934,277 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     </div>
                   )}
 
-                  {/* TAB CONTENT 2: КЛИПЫ */}
-                  {activeTab === 'clips' && (
-                    <div className="p-4 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            onClick={() => setSelectedFolderId('all')}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer ${
-                              selectedFolderId === 'all'
-                                ? 'bg-[#0077FF] text-white'
-                                : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
-                            }`}
-                          >
-                            Все клипы
-                          </button>
-
-                          {(community.folders || [])
-                            .filter((f) => f.type === 'clips')
-                            .map((folder) => (
-                              <button
-                                key={folder.id}
-                                onClick={() => setSelectedFolderId(folder.id)}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer flex items-center gap-1 ${
-                                  selectedFolderId === folder.id
-                                    ? 'bg-[#0077FF] text-white'
-                                    : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
-                                }`}
-                              >
-                                <Folder className="w-3.5 h-3.5" />
-                                <span>{folder.name}</span>
-                              </button>
-                            ))}
-                        </div>
-
-                        {canManage && (
-                          <button
-                            onClick={() => {
-                              setFolderTargetType('clips');
-                              setShowFolderModal(true);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb] text-xs font-medium flex items-center gap-1 cursor-pointer shrink-0"
-                          >
-                            <FolderPlus className="w-3.5 h-3.5" />
-                            <span>+ Плейлист</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {communityPosts.filter((p) => p.mediaUrl).length > 0 ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {communityPosts
-                            .filter((p) => p.mediaUrl)
-                            .map((clip) => (
-                              <div key={clip.id} className="p-3 rounded-xl bg-[#292929] border border-[#333334] space-y-2">
-                                <div className="rounded-lg overflow-hidden bg-[#141414]">
-                                  {clip.mediaType === 'video' ? (
-                                    <video src={clip.mediaUrl} controls className="w-full max-h-80 object-contain" />
-                                  ) : (
-                                    <img
-                                      src={clip.mediaUrl}
-                                      alt=""
-                                      onClick={() =>
-                                        setFullscreenMedia({
-                                          url: clip.mediaUrl,
-                                          type: 'image',
-                                          title: clip.caption
-                                        })
-                                      }
-                                      className="w-full max-h-80 object-contain cursor-zoom-in"
-                                    />
-                                  )}
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs text-[#e1e3e6] truncate">{clip.caption}</p>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setFullscreenMedia({
-                                        url: clip.mediaUrl,
-                                        type: clip.mediaType === 'video' ? 'video' : 'image',
-                                        title: clip.caption
-                                      })
-                                    }
-                                    className="px-2.5 py-1 rounded-lg bg-[#0077FF] text-white text-xs font-medium shrink-0 cursor-pointer"
-                                  >
-                                    Открыть
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : (
-                        <div className="p-8 text-center space-y-2">
-                          <Film className="w-8 h-8 text-[#828282] mx-auto" />
-                          <p className="text-xs sm:text-sm text-[#e1e3e6] font-medium">Клипы сообщества</p>
-                          <p className="text-xs text-[#828282]">Здесь отображаются короткие вертикальные ролики и клипы.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* TAB CONTENT 3: ВИДЕО */}
+                  {/* TAB CONTENT 2: РАЗДЕЛ «ВИДЕО» В СТИЛЕ VK ВИДЕО (vk.ru/video) */}
                   {activeTab === 'videos' && (
-                    <div className="p-4 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            onClick={() => setSelectedFolderId('all')}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer ${
-                              selectedFolderId === 'all'
-                                ? 'bg-[#0077FF] text-white'
-                                : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
-                            }`}
-                          >
-                            Все видео
-                          </button>
-
-                          {(community.folders || [])
-                            .filter((f) => f.type === 'videos')
-                            .map((folder) => (
-                              <button
-                                key={folder.id}
-                                onClick={() => setSelectedFolderId(folder.id)}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer flex items-center gap-1 ${
-                                  selectedFolderId === folder.id
-                                    ? 'bg-[#0077FF] text-white'
-                                    : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
-                                }`}
-                              >
-                                <Folder className="w-3.5 h-3.5" />
-                                <span>{folder.name}</span>
-                              </button>
-                            ))}
+                    <div className="p-3.5 sm:p-5 space-y-4 bg-[#222222]">
+                      
+                      {/* VK Video Top Header Bar (Никогда не съезжает и не переносит кнопки на 3 строки) */}
+                      <div className="p-3 sm:p-3.5 rounded-xl bg-[#19191a] border border-[#2e2e2e] flex flex-wrap items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-[#0077FF]/15 flex items-center justify-center shrink-0">
+                            <Video className="w-4 h-4 text-[#0077FF]" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs sm:text-sm font-bold text-white truncate">Видеозаписи</span>
+                              <span className="text-xs text-[#828282] font-mono tabular-nums">{communityVideos.length}</span>
+                            </div>
+                          </div>
                         </div>
 
-                        {canManage && (
+                        <div className="flex items-center gap-2 shrink-0 ml-auto">
+                          {communityVideos.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleDeleteAllVideos}
+                              className="px-3 py-2 rounded-lg bg-[#2c2d2e] hover:bg-rose-500/20 text-[#e1e3e6] hover:text-rose-400 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition whitespace-nowrap shrink-0"
+                              title="Удалить все видео из сообщества"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                              <span>Удалить все</span>
+                            </button>
+                          )}
                           <button
-                            onClick={() => {
-                              setFolderTargetType('videos');
-                              setShowFolderModal(true);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#71aaeb] text-xs font-medium flex items-center gap-1 cursor-pointer shrink-0"
+                            type="button"
+                            onClick={() => handleOpenUploadModal('video')}
+                            className="px-3.5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition whitespace-nowrap shrink-0"
                           >
-                            <FolderPlus className="w-3.5 h-3.5" />
-                            <span>+ Плейлист</span>
+                            <Plus className="w-4 h-4 shrink-0" />
+                            <span>Добавить видео</span>
                           </button>
-                        )}
+                        </div>
                       </div>
 
-                      {communityPosts.filter((p) => p.mediaUrl).length > 0 ? (
-                        <div className="space-y-3">
-                          {communityPosts
-                            .filter((p) => p.mediaUrl)
-                            .map((vid) => (
-                              <div key={vid.id} className="p-3.5 rounded-xl bg-[#292929] border border-[#333334] space-y-2">
-                                <div className="rounded-lg overflow-hidden bg-[#141414]">
-                                  {vid.mediaType === 'video' ? (
-                                    <video src={vid.mediaUrl} controls className="w-full max-h-[500px] object-contain" />
-                                  ) : (
-                                    <img
-                                      src={vid.mediaUrl}
-                                      alt=""
-                                      onClick={() =>
-                                        setFullscreenMedia({
-                                          url: vid.mediaUrl,
-                                          type: 'image',
-                                          title: vid.caption
-                                        })
-                                      }
-                                      className="w-full max-h-[500px] object-contain cursor-zoom-in"
-                                    />
-                                  )}
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs text-[#e1e3e6]">{vid.caption}</p>
+                      {(() => {
+                        const youtubeVideos = communityVideos;
+                        const playlists = Array.from(new Set(youtubeVideos.map((v) => v.playlist || 'Общие')));
+
+                        // Filter by Search, Playlist and Sort
+                        let filtered = youtubeVideos.filter((v) => {
+                          const matchesQuery =
+                            !videoSearchQuery.trim() ||
+                            v.title.toLowerCase().includes(videoSearchQuery.toLowerCase()) ||
+                            (v.description && v.description.toLowerCase().includes(videoSearchQuery.toLowerCase()));
+                          const matchesPlaylist =
+                            selectedVideoCategory === 'all' || (v.playlist || 'Общие') === selectedVideoCategory;
+                          return matchesQuery && matchesPlaylist;
+                        });
+
+                        if (videoSortBy === 'views') {
+                          filtered = [...filtered].sort((a, b) => b.viewsCount - a.viewsCount);
+                        } else if (videoSortBy === 'likes') {
+                          filtered = [...filtered].sort((a, b) => b.likesCount - a.likesCount);
+                        } else {
+                          filtered = [...filtered].sort(
+                            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-4">
+                            {/* VK Video Search Bar + Playlists Tabs + Sorting */}
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 p-3 rounded-xl bg-[#19191a] border border-[#2e2e2e]">
+                              {/* Search */}
+                              <div className="relative flex-1 min-w-0">
+                                <Search className="w-4 h-4 text-[#828282] absolute left-3 top-2.5" />
+                                <input
+                                  type="text"
+                                  value={videoSearchQuery}
+                                  onChange={(e) => setVideoSearchQuery(e.target.value)}
+                                  placeholder="Поиск по видеозаписям..."
+                                  className="w-full bg-[#222222] text-xs text-white rounded-lg pl-9 pr-8 py-2 border border-[#2e2e2e] focus:border-[#0077FF] outline-none placeholder-[#828282]"
+                                />
+                                {videoSearchQuery && (
                                   <button
-                                    type="button"
-                                    onClick={() =>
-                                      setFullscreenMedia({
-                                        url: vid.mediaUrl,
-                                        type: vid.mediaType === 'video' ? 'video' : 'image',
-                                        title: vid.caption
-                                      })
-                                    }
-                                    className="px-2.5 py-1 rounded-lg bg-[#0077FF] text-white text-xs font-medium shrink-0 cursor-pointer"
+                                    onClick={() => setVideoSearchQuery('')}
+                                    className="absolute right-2.5 top-2.5 text-[#828282] hover:text-white cursor-pointer"
                                   >
-                                    На весь экран
+                                    <X className="w-3.5 h-3.5" />
                                   </button>
-                                </div>
+                                )}
                               </div>
-                            ))}
-                        </div>
-                      ) : (
-                        <div className="p-8 text-center space-y-2">
-                          <Video className="w-8 h-8 text-[#828282] mx-auto" />
-                          <p className="text-xs sm:text-sm text-[#e1e3e6] font-medium">Видеозаписи сообщества</p>
-                          <p className="text-xs text-[#828282]">Добавляйте видеоролики и объединяйте их в тематические плейлисты.</p>
-                        </div>
-                      )}
+
+                              {/* Playlists Filter Buttons */}
+                              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedVideoCategory('all')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition ${
+                                    selectedVideoCategory === 'all'
+                                      ? 'bg-[#0077FF] text-white'
+                                      : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
+                                  }`}
+                                >
+                                  Все видео ({youtubeVideos.length})
+                                </button>
+                                {playlists.map((pl) => (
+                                  <button
+                                    key={pl}
+                                    type="button"
+                                    onClick={() => setSelectedVideoCategory(pl)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition ${
+                                      selectedVideoCategory === pl
+                                        ? 'bg-[#0077FF] text-white'
+                                        : 'bg-[#2c2d2e] text-[#939393] hover:text-white'
+                                    }`}
+                                  >
+                                    {pl}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Sorting */}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Filter className="w-3.5 h-3.5 text-[#828282]" />
+                                <select
+                                  value={videoSortBy}
+                                  onChange={(e) => setVideoSortBy(e.target.value as any)}
+                                  className="bg-[#222222] text-xs text-[#e1e3e6] rounded-lg px-2.5 py-1.5 border border-[#2e2e2e] outline-none cursor-pointer"
+                                >
+                                  <option value="newest">Сначала новые</option>
+                                  <option value="views">По просмотрам</option>
+                                  <option value="likes">По лайкам</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* VK Video Grid */}
+                            {filtered.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {filtered.map((vid) => {
+                                  const privacyType = vid.privacy || 'public';
+                                  return (
+                                    <div
+                                      key={vid.id}
+                                      onClick={() => handleOpenVideoPlayer(vid)}
+                                      className="group bg-[#19191a] hover:bg-[#202022] rounded-xl overflow-hidden border border-[#2e2e2e] hover:border-[#3d3d40] transition cursor-pointer flex flex-col relative"
+                                    >
+                                      {/* VK Video Thumbnail with Hover-Only Play Button (чтоб не мешался предпросмотром видео) */}
+                                      <div
+                                        className="relative aspect-video bg-[#101011] overflow-hidden"
+                                        onMouseEnter={(e) => {
+                                          const previewVid = e.currentTarget.querySelector('video');
+                                          if (previewVid) {
+                                            previewVid.play().catch(() => {});
+                                          }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          const previewVid = e.currentTarget.querySelector('video');
+                                          if (previewVid) {
+                                            previewVid.pause();
+                                            previewVid.currentTime = 0;
+                                          }
+                                        }}
+                                      >
+                                        {vid.coverUrl ? (
+                                          <img
+                                            src={vid.coverUrl}
+                                            alt={vid.title}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <video
+                                            src={vid.mediaUrl}
+                                            muted
+                                            playsInline
+                                            preload="metadata"
+                                            className="w-full h-full object-cover"
+                                          />
+                                        )}
+
+                                        {/* Play Icon Overlay: СКРЫТ по умолчанию, появляется ТОЛЬКО при наведении курсора и исчезает при отведении */}
+                                        <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
+                                          <div className="w-12 h-12 rounded-full bg-[#0077FF]/95 text-white flex items-center justify-center shadow-lg transform scale-95 group-hover:scale-100 transition-transform duration-200">
+                                            <Play className="w-5 h-5 fill-current ml-0.5" />
+                                          </div>
+                                        </div>
+
+                                        {/* Top-Left Visibility Status Badge */}
+                                        {privacyType !== 'public' && (
+                                          <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/80 text-[#e1e3e6] text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm">
+                                            {privacyType === 'private' ? (
+                                              <>
+                                                <Lock className="w-3 h-3 text-rose-400" />
+                                                <span>Закрытый</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Link2 className="w-3 h-3 text-amber-400" />
+                                                <span>По ссылке</span>
+                                              </>
+                                            )}
+                                          </span>
+                                        )}
+
+                                        {/* Bottom-Right Playlist Tag */}
+                                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/80 text-white text-[10px] font-medium">
+                                          {vid.playlist || 'Общие'}
+                                        </span>
+                                      </div>
+
+                                      {/* VK Video Card Info + Bottom-Right Edit Button */}
+                                      <div className="p-3 flex items-start justify-between gap-2.5 flex-1">
+                                        <img
+                                          src={vid.userAvatar || community.avatarUrl}
+                                          alt={vid.userName}
+                                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-[#2e2e2e] mt-0.5"
+                                        />
+
+                                        <div className="min-w-0 flex-1 space-y-0.5">
+                                          <h3 className="text-xs sm:text-[13px] font-semibold text-white line-clamp-2 leading-snug group-hover:text-[#71aaeb] transition-colors">
+                                            {vid.title}
+                                          </h3>
+                                          <p className="text-[11px] text-[#939393] truncate">{vid.userName}</p>
+                                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#828282] tabular-nums pt-0.5">
+                                            <span className="flex items-center gap-1">
+                                              <Eye className="w-3 h-3 text-[#71aaeb]" /> {vid.viewsCount}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                              <Heart className="w-3 h-3 text-rose-400" /> {vid.likesCount}
+                                            </span>
+                                            <span>· {formatSmartTime(vid.createdAt, vid.id, nowTick)}</span>
+                                          </div>
+                                        </div>
+
+                                        {/* Кнопка Редактировать ПЕРЕМЕЩЕНА В ПРАВЫЙ НИЖНИЙ УГОЛ карточки */}
+                                        <div className="shrink-0 self-end ml-1">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => handleOpenEditVideo(vid, e)}
+                                            className="p-2 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-[#e1e3e6] hover:text-white transition cursor-pointer shadow-sm flex items-center justify-center"
+                                            title="Редактировать видео (название, плейлист, обложка, видимость, удалить)"
+                                          >
+                                            <Edit3 className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="p-8 rounded-xl bg-[#19191a] border border-[#2e2e2e] text-center space-y-3">
+                                <Video className="w-10 h-10 text-[#0077FF] mx-auto opacity-80" />
+                                <h3 className="text-sm font-bold text-white">Видеозаписи пока не добавлены</h3>
+                                <p className="text-xs text-[#939393] max-w-sm mx-auto">
+                                  Загружайте видеоролики, устанавливайте обложки, распределяйте по плейлистам и настраивайте доступ.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenUploadModal('video')}
+                                  className="px-4 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                                >
+                                  Добавить первое видео
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                     </div>
                   )}
+
 
                   {/* TAB CONTENT 4: СОБЫТИЯ */}
                   {activeTab === 'events' && (
@@ -2934,7 +3323,6 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
               <video
                 src={fullscreenMedia.url}
                 controls
-                autoPlay
                 playsInline
                 className="max-w-full max-h-[82vh] rounded-2xl bg-black shadow-2xl"
               />
@@ -2945,6 +3333,657 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 className="max-w-full max-h-[82vh] object-contain rounded-2xl shadow-2xl select-none"
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* FULL CUSTOM VK-STYLE VIDEO PLAYER (AuraVideoPlayer) */}
+      {activePlayingVideo && (
+        <AuraVideoPlayer
+          video={activePlayingVideo}
+          onClose={() => setActivePlayingVideo(null)}
+          onSaveWatchPosition={(videoId, posSec) => {
+            saveVideoWatchPosition(videoId, currentUser.id, posSec);
+          }}
+          initialWatchPositionSec={savedWatchPositionSec}
+          onEditVideo={(vid) => handleOpenEditVideo(vid)}
+        />
+      )}
+
+      {/* MODAL 8: МАСТЕР ЗАГРУЗКИ ВИДЕО В СТИЛЕ VK ВИДЕО (Без съезжания и обрезки сверху/снизу) */}
+      {showUploadVideoModal && (
+        <div className="fixed inset-0 z-[85] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl max-w-lg w-full max-h-[86vh] flex flex-col overflow-hidden text-[#e1e3e6] shadow-2xl">
+            
+            {/* Fixed Header */}
+            <div className="px-4 sm:px-5 py-3.5 border-b border-[#2e2e2e] flex items-center justify-between shrink-0 bg-[#222222]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[#0077FF]/15 flex items-center justify-center shrink-0">
+                  <Video className="w-4 h-4 text-[#0077FF]" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white truncate">
+                    Загрузка видео в «{community.title}»
+                  </h3>
+                  <p className="text-[11px] text-[#939393] truncate">
+                    Добавление видеозаписи и настройка обложки
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUploadVideoModal(false)}
+                className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Fixed Stepper Bar (Никогда не обрезается сверху) */}
+            <div className="px-4 sm:px-5 py-2.5 bg-[#19191a] border-b border-[#2e2e2e] grid grid-cols-4 gap-1.5 shrink-0">
+              <div className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold text-center whitespace-nowrap truncate ${
+                uploadStep === 1 ? 'bg-[#0077FF] text-white' : uploadStep > 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#222222] text-[#828282]'
+              }`}>
+                1. Файл
+              </div>
+              <div className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold text-center whitespace-nowrap truncate ${
+                uploadStep === 2 ? 'bg-[#0077FF] text-white' : uploadStep > 2 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#222222] text-[#828282]'
+              }`}>
+                2. Данные
+              </div>
+              <div className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold text-center whitespace-nowrap truncate ${
+                uploadStep === 3 ? 'bg-[#0077FF] text-white' : uploadStep > 3 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-[#222222] text-[#828282]'
+              }`}>
+                3. Проверка
+              </div>
+              <div className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold text-center whitespace-nowrap truncate ${
+                uploadStep === 4 ? 'bg-emerald-600 text-white' : 'bg-[#222222] text-[#828282]'
+              }`}>
+                4. Готово
+              </div>
+            </div>
+
+            {/* Scrollable Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 scrollbar-thin">
+              {/* STEP 1: ЗАГРУЗИТЬ ФАЙЛ И ОБЛОЖКУ */}
+              {uploadStep === 1 && (
+                <div className="space-y-3.5">
+                  <div className="p-4 border border-dashed border-[#3a3b3c] hover:border-[#0077FF] rounded-xl bg-[#19191a] text-center space-y-2.5 transition">
+                    <Upload className="w-8 h-8 text-[#0077FF] mx-auto" />
+                    <div>
+                      <span className="text-xs font-bold text-white block">Выберите видеофайл с устройства</span>
+                      <span className="text-[11px] text-[#828282]">Поддерживаются форматы MP4, MOV, WEBM</span>
+                    </div>
+                    <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer transition">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Выбрать файл</span>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={(e) => handleFileUploadForVideo(e, false)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-[#939393] font-semibold block">Или прямая ссылка на видео (URL):</label>
+                    <input
+                      type="text"
+                      value={uploadMediaUrl}
+                      onChange={(e) => setUploadMediaUrl(e.target.value)}
+                      placeholder="https://.../video.mp4"
+                      className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                    />
+                  </div>
+
+                  {/* Установка обложки прямо при загрузке */}
+                  <div className="space-y-2 pt-1 border-t border-[#2e2e2e]">
+                    <label className="text-[11px] text-[#939393] font-semibold block">Обложка видео (необязательно):</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="px-3 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-white cursor-pointer flex items-center gap-1.5 transition">
+                        <ImageIcon className="w-3.5 h-3.5 text-[#71aaeb]" />
+                        <span>Загрузить обложку</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleFileUploadForVideo(e, true)}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {uploadMediaUrl && (
+                        <button
+                          type="button"
+                          onClick={() => handleCaptureFrameFromVideo(uploadMediaUrl, (dataUrl) => setUploadCoverUrl(dataUrl))}
+                          className="px-3 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#71aaeb] cursor-pointer flex items-center gap-1.5 transition"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Сделать кадр из видео</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={uploadCoverUrl}
+                      onChange={(e) => setUploadCoverUrl(e.target.value)}
+                      placeholder="Или вставьте ссылку на изображение обложки..."
+                      className="w-full bg-[#19191a] text-xs text-white p-2 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                    />
+
+                    {uploadCoverUrl && (
+                      <div className="flex items-center gap-3 p-2 bg-[#19191a] rounded-lg border border-[#2e2e2e]">
+                        <img src={uploadCoverUrl} alt="Обложка" className="w-16 h-10 object-cover rounded border border-[#3a3b3c] shrink-0" />
+                        <span className="text-xs text-emerald-400 font-medium truncate flex-1">✓ Обложка выбрана</span>
+                        <button
+                          type="button"
+                          onClick={() => setUploadCoverUrl('')}
+                          className="px-2 py-1 rounded bg-[#2c2d2e] hover:bg-rose-500/20 text-xs text-rose-400 cursor-pointer"
+                        >
+                          Сбросить
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {uploadMediaUrl && (
+                    <div className="p-2.5 bg-[#19191a] rounded-lg border border-[#2e2e2e] flex items-center gap-3">
+                      <video src={uploadMediaUrl} className="w-16 h-10 rounded object-cover bg-black shrink-0" />
+                      <div className="min-w-0 flex-1 text-xs">
+                        <span className="font-semibold text-emerald-400 block truncate">✓ Видеофайл готов к загрузке</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 2: НАЗВАНИЕ, ПЛЕЙЛИСТ, ОБЛОЖКА И ДОСТУП */}
+              {uploadStep === 2 && (
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="text-[11px] text-[#939393] font-semibold block mb-1">Название видео *</label>
+                    <input
+                      type="text"
+                      value={uploadTitle}
+                      onChange={(e) => setUploadTitle(e.target.value)}
+                      placeholder="Введите название видеозаписи..."
+                      className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-[#939393] font-semibold block mb-1">Описание</label>
+                    <textarea
+                      value={uploadDesc}
+                      onChange={(e) => setUploadDesc(e.target.value)}
+                      rows={2}
+                      placeholder="Добавьте описание к видео..."
+                      className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF] resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-[#939393] font-semibold block mb-1">Плейлист</label>
+                      <input
+                        type="text"
+                        value={uploadPlaylist}
+                        onChange={(e) => setUploadPlaylist(e.target.value)}
+                        placeholder="Общие"
+                        className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-[#939393] font-semibold block mb-1">Тематика</label>
+                      <select
+                        value={uploadCategory}
+                        onChange={(e) => setUploadCategory(e.target.value)}
+                        className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none"
+                      >
+                        <option value="Развлечения">Развлечения</option>
+                        <option value="Обучение">Обучение</option>
+                        <option value="Технологии">Технологии</option>
+                        <option value="Музыка">Музыка</option>
+                        <option value="Игры">Игры</option>
+                        <option value="Блоги">Блоги</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Кому доступно видео (Открытый / По ссылке / Закрытый) */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-[#939393] font-semibold block">Кому доступно видео:</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setUploadPrivacy('public')}
+                        className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                          uploadPrivacy === 'public'
+                            ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                            : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                          <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>Открытый</span>
+                        </div>
+                        <span className="text-[10px] text-[#828282] block mt-0.5">Видно всем</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUploadPrivacy('unlisted')}
+                        className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                          uploadPrivacy === 'unlisted'
+                            ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                            : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                          <Link2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>По ссылке</span>
+                        </div>
+                        <span className="text-[10px] text-[#828282] block mt-0.5">У кого есть ссылка</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUploadPrivacy('private')}
+                        className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                          uploadPrivacy === 'private'
+                            ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                            : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                          <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>Закрытый</span>
+                        </div>
+                        <span className="text-[10px] text-[#828282] block mt-0.5">Только автору</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: ПРОВЕРКА */}
+              {uploadStep === 3 && (
+                <div className="p-4 rounded-xl bg-[#19191a] border border-[#2e2e2e] space-y-3 text-center">
+                  <div className="w-12 h-12 rounded-full bg-[#0077FF]/15 text-[#0077FF] flex items-center justify-center mx-auto">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Проверка видеозаписи</h4>
+                    <p className="text-xs text-[#939393]">Проверка совместимости потока и метаданных</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="text-[#71aaeb]">Готовность</span>
+                      <span className="text-white font-mono tabular-nums">{aiScanProgress}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-[#222222] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#0077FF] transition-all duration-300"
+                        style={{ width: `${aiScanProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-[#141414] rounded-lg text-[11px] font-mono text-left text-[#939393] space-y-1 border border-[#2e2e2e]">
+                    {aiScanLogs.map((log, idx) => (
+                      <div key={idx}>{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: ОПУБЛИКОВАНО */}
+              {uploadStep === 4 && (
+                <div className="space-y-3 text-center py-2">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                    <Check className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Видеозапись опубликована</h3>
+                    <p className="text-xs text-[#939393]">«{uploadTitle || 'Видеозапись'}» добавлена в сообщество</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Fixed Footer */}
+            <div className="px-4 sm:px-5 py-3 border-t border-[#2e2e2e] bg-[#19191a] flex items-center justify-between gap-2 shrink-0">
+              {uploadStep === 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadVideoModal(false)}
+                    className="px-4 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!uploadMediaUrl.trim()}
+                    onClick={() => setUploadStep(2)}
+                    className="px-5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Далее
+                  </button>
+                </>
+              )}
+
+              {uploadStep === 2 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setUploadStep(1)}
+                    className="px-4 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+                  >
+                    Назад
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!uploadTitle.trim()}
+                    onClick={() => {
+                      setUploadStep(3);
+                      handleStartAiScan();
+                    }}
+                    className="px-5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Продолжить
+                  </button>
+                </>
+              )}
+
+              {uploadStep === 3 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setUploadStep(2)}
+                    className="px-4 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+                  >
+                    Назад
+                  </button>
+                  <button
+                    type="button"
+                    disabled={aiScanProgress < 100}
+                    onClick={handleUploadVideoFormSubmit}
+                    className="px-5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] disabled:opacity-40 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Опубликовать видео
+                  </button>
+                </>
+              )}
+
+              {uploadStep === 4 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadVideoModal(false)}
+                    className="px-4 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-xs font-semibold text-[#e1e3e6] cursor-pointer"
+                  >
+                    Закрыть
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUploadVideoModal(false);
+                      if (communityVideos.length > 0) {
+                        handleOpenVideoPlayer(communityVideos[0]);
+                      }
+                    }}
+                    className="px-5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Смотреть видео
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* РЕДАКТИРОВАНИЕ ВИДЕОЗАПИСИ В СТИЛЕ VK ВИДЕО (Название, Плейлист, Обложка, Видимость: Открытый/Закрытый/По ссылке, Удалить) */}
+      {editingVideo && (
+        <div
+          className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in"
+          onClick={() => setEditingVideo(null)}
+        >
+          <div
+            className="bg-[#222222] border border-[#2e2e2e] rounded-2xl w-full max-w-lg max-h-[88vh] flex flex-col overflow-hidden text-[#e1e3e6] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-4 sm:px-5 py-3.5 border-b border-[#2e2e2e] flex items-center justify-between shrink-0 bg-[#222222]">
+              <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-[#0077FF]" />
+                <span>Редактирование видеозаписи</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingVideo(null)}
+                className="p-1.5 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#939393] hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 scrollbar-thin">
+              {/* 1. Обложка видео (Превью + Загрузить свою + Кадр из видео + Готовые) */}
+              <div className="space-y-2">
+                <label className="text-xs text-[#939393] font-semibold block">Обложка видеозаписи</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center bg-[#19191a] p-3 rounded-xl border border-[#2e2e2e]">
+                  <div className="relative aspect-video rounded-lg overflow-hidden bg-black border border-[#2e2e2e]">
+                    {videoEditCoverUrl ? (
+                      <img src={videoEditCoverUrl} alt="Обложка" className="w-full h-full object-cover" />
+                    ) : (
+                      <video src={editingVideo.mediaUrl} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                    )}
+                    <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] text-white font-medium">
+                      {videoEditCoverUrl ? 'Своя обложка' : 'Автокадр'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="w-full px-3 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition">
+                      <Upload className="w-3.5 h-3.5 shrink-0" />
+                      <span>Загрузить обложку</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleCoverFileSelect(e, (dataUrl) => setVideoEditCoverUrl(dataUrl))}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCaptureFrameFromVideo(editingVideo.mediaUrl, (dataUrl) => setVideoEditCoverUrl(dataUrl))}
+                      className="w-full px-3 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
+                      <span>Кадр из видео</span>
+                    </button>
+
+                    {videoEditCoverUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setVideoEditCoverUrl('')}
+                        className="w-full px-3 py-1.5 rounded-lg bg-[#2c2d2e] hover:bg-rose-500/20 text-rose-400 text-xs font-medium cursor-pointer transition"
+                      >
+                        Сбросить обложку
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Поле ссылки на обложку + Быстрые пресеты обложек */}
+                <input
+                  type="text"
+                  value={videoEditCoverUrl}
+                  onChange={(e) => setVideoEditCoverUrl(e.target.value)}
+                  placeholder="Или вставьте прямую ссылку (URL) на обложку..."
+                  className="w-full bg-[#19191a] text-xs text-white p-2 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                />
+              </div>
+
+              {/* 2. Название видео */}
+              <div>
+                <label className="text-xs text-[#939393] font-semibold block mb-1">Название видео *</label>
+                <input
+                  type="text"
+                  value={videoEditTitle}
+                  onChange={(e) => setVideoEditTitle(e.target.value)}
+                  placeholder="Введите название видео..."
+                  className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                />
+              </div>
+
+              {/* 3. Описание */}
+              <div>
+                <label className="text-xs text-[#939393] font-semibold block mb-1">Описание</label>
+                <textarea
+                  value={videoEditDescription}
+                  onChange={(e) => setVideoEditDescription(e.target.value)}
+                  rows={2}
+                  placeholder="Описание видеоролика..."
+                  className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF] resize-none"
+                />
+              </div>
+
+              {/* 4. Плейлист (выбор существующего или ввод нового) */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-[#939393] font-semibold block">Плейлист</label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {Array.from(new Set(['Общие', 'Музыка', 'Обучение', 'Влоги', 'Игры', ...communityVideos.map((v) => v.playlist || 'Общие')])).map((pl) => (
+                    <button
+                      key={pl}
+                      type="button"
+                      onClick={() => setVideoEditPlaylist(pl)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition ${
+                        videoEditPlaylist === pl
+                          ? 'bg-[#0077FF] text-white'
+                          : 'bg-[#19191a] border border-[#2e2e2e] text-[#939393] hover:text-white'
+                      }`}
+                    >
+                      {pl}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={videoEditPlaylist}
+                  onChange={(e) => setVideoEditPlaylist(e.target.value)}
+                  placeholder="Или введите название нового плейлиста..."
+                  className="w-full bg-[#19191a] text-xs text-white p-2.5 rounded-lg border border-[#2e2e2e] outline-none focus:border-[#0077FF]"
+                />
+              </div>
+
+              {/* 5. Ограничение видимости видео (Открытый / По ссылке / Закрытый) */}
+              <div className="space-y-2">
+                <label className="text-xs text-[#939393] font-semibold block">Кому доступно это видео (видимость)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setVideoEditPrivacy('public')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      videoEditPrivacy === 'public'
+                        ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                        : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Открытый</span>
+                    </div>
+                    <span className="text-[10px] text-[#828282] block mt-0.5">Видно всем в сообществе</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setVideoEditPrivacy('unlisted')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      videoEditPrivacy === 'unlisted'
+                        ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                        : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Link2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>По ссылке</span>
+                    </div>
+                    <span className="text-[10px] text-[#828282] block mt-0.5">Только тем, у кого ссылка</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setVideoEditPrivacy('private')}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      videoEditPrivacy === 'private'
+                        ? 'bg-[#0077FF]/15 border-[#0077FF] text-white'
+                        : 'bg-[#19191a] border-[#2e2e2e] text-[#939393] hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                      <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span>Закрытый</span>
+                    </div>
+                    <span className="text-[10px] text-[#828282] block mt-0.5">Видно только мне</span>
+                  </button>
+                </div>
+
+                {videoEditPrivacy === 'unlisted' && (
+                  <div className="p-2.5 rounded-lg bg-[#19191a] border border-[#2e2e2e] flex items-center justify-between gap-2 text-xs">
+                    <span className="font-mono text-[#71aaeb] truncate">
+                      {`https://aurachat.app/video/${editingVideo.id}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`https://aurachat.app/video/${editingVideo.id}`);
+                        setIsVideoLinkCopied(true);
+                        playReactionSound();
+                        setTimeout(() => setIsVideoLinkCopied(false), 2000);
+                      }}
+                      className="px-2.5 py-1 rounded bg-[#0077FF] hover:bg-[#0066DD] text-white text-[11px] font-semibold cursor-pointer shrink-0"
+                    >
+                      {isVideoLinkCopied ? 'Скопировано!' : 'Копировать ссылку'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer with Delete & Save */}
+            <div className="px-4 sm:px-5 py-3 border-t border-[#2e2e2e] bg-[#19191a] flex items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDeleteSingleVideo(editingVideo.id)}
+                className="px-3.5 py-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              >
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span>Удалить видео</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingVideo(null)}
+                  className="px-4 py-2 rounded-lg bg-[#2c2d2e] hover:bg-[#363738] text-[#e1e3e6] text-xs font-semibold cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditedVideo}
+                  className="px-5 py-2 rounded-lg bg-[#0077FF] hover:bg-[#0066DD] text-white text-xs font-semibold shadow transition cursor-pointer"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

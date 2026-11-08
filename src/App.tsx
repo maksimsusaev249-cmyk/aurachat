@@ -58,7 +58,11 @@ import {
   subscribeToCallSignalsFromCloud,
   isFirestoreQuotaExceeded,
   subscribeToQuotaExceeded,
-  deleteItemsFromCloud
+  deleteItemsFromCloud,
+  sendServerMessage,
+  fetchServerMessages,
+  updateServerMessageStatus,
+  searchServerMessages
 } from './firebase';
 import { 
   MessageSquare, 
@@ -2109,6 +2113,25 @@ export default function App() {
     if (!selectedChat?.id) return;
     const activeId = selectedChat.id;
 
+    // Fetch message history from backend PostgreSQL/shared database
+    fetchServerMessages(activeId).then((serverMsgs) => {
+      if (Array.isArray(serverMsgs) && serverMsgs.length > 0) {
+        setMessagesMap((prev) => {
+          const currentList = prev[activeId] || [];
+          const mapById = new Map<string, Message>();
+          currentList.forEach((m) => mapById.set(m.id, m));
+          serverMsgs.forEach((m) => mapById.set(m.id, m));
+          const merged = Array.from(mapById.values()).sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
+          return {
+            ...prev,
+            [activeId]: merged
+          };
+        });
+      }
+    });
+
     setChats((prev) => {
       const target = prev.find((c) => c.id === activeId);
       if (!target || !target.unreadCount) return prev;
@@ -2117,8 +2140,14 @@ export default function App() {
 
     setMessagesMap((prev) => {
       const list = prev[activeId] || [];
-      const hasUnreadFromOthers = list.some((m) => m.senderId !== currentUser.id && m.status !== 'read');
-      if (!hasUnreadFromOthers) return prev;
+      const unreadFromOthers = list.filter((m) => m.senderId !== currentUser.id && m.status !== 'read');
+      if (unreadFromOthers.length === 0) return prev;
+
+      // Update backend status for read messages
+      unreadFromOthers.forEach((m) => {
+        updateServerMessageStatus(m.id, activeId, currentUser.id, 'read');
+      });
+
       return {
         ...prev,
         [activeId]: list.map((m) =>
@@ -2337,6 +2366,9 @@ export default function App() {
         ...prev,
         [activeChatId]: [...updatedExisting, newMsg]
       };
+
+      // Immediately sync message via real backend server API (/api/messages)
+      sendServerMessage(newMsg, currentUser.id);
 
       // Immediately sync group/channel/direct publications to the shared server
       savePlatformStateToCloud({

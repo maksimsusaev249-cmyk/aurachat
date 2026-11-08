@@ -364,4 +364,37 @@ export interface Community {
   updatedAt?: number; // Метка последнего изменения для синхронизации между устройствами
 }
 
+export interface CommunityVideoComment {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  content: string;
+  createdAt: string;
+  likesCount?: number;
+}
+
+export interface CommunityVideo {
+  id: string;
+  communityId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  type: 'video' | 'reel';
+  title: string;
+  description?: string;
+  mediaUrl: string;
+  coverUrl?: string;
+  category?: string;
+  playlist?: string;
+  privacy?: 'public' | 'private' | 'unlisted';
+  copyrightStatus?: 'clean' | 'checking' | 'flagged';
+  viewsCount: number;
+  likesCount: number;
+  isLiked?: boolean;
+  comments: CommunityVideoComment[];
+  createdAt: string;
+}
+
+
 

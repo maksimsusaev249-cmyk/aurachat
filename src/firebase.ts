@@ -14,7 +14,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer, setDoc, onSnapshot, disableNetwork } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { User, Chat, Message, Story, Post, Community, CallRecord } from './types';
+import { User, Chat, Message, Story, Post, Community, CallRecord, CommunityVideo, CommunityVideoComment } from './types';
 
 const app = initializeApp(firebaseConfig);
 
@@ -484,6 +484,46 @@ export function subscribeToCloudPlatformState(
           }
         } catch {}
       });
+
+      eventSource.addEventListener('NEW_MESSAGE', (event: MessageEvent) => {
+        if (isDisposed) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.chatId && data.message) {
+            // Forward real-time message via window BroadcastChannel or trigger state refresh
+            if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const ch = new BroadcastChannel('aurachat_live_messages_sync');
+              ch.postMessage({
+                type: 'NEW_CHAT_MESSAGE',
+                chatId: data.chatId,
+                message: data.message
+              });
+              ch.close();
+            }
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('MESSAGE_STATUS', (event: MessageEvent) => {
+        if (isDisposed) return;
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.chatId && data.messageId && data.status) {
+            if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const ch = new BroadcastChannel('aurachat_live_messages_sync');
+              ch.postMessage({
+                type: 'CHAT_READ_AND_ONLINE',
+                chatId: data.chatId,
+                readerId: data.userId,
+                messageId: data.messageId,
+                status: data.status,
+                timestamp: Date.now()
+              });
+              ch.close();
+            }
+          }
+        } catch {}
+      });
     }
   } catch {}
 
@@ -500,6 +540,231 @@ export function subscribeToCloudPlatformState(
     }
   };
 }
+
+/**
+ * Send message directly via backend API (/api/messages)
+ */
+export async function sendServerMessage(msg: Message, userId?: string): Promise<Message | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const res = await fetch('/api/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId || msg.senderId
+      },
+      body: JSON.stringify(msg)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.message || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch messages history for a chat via backend API (/api/messages)
+ */
+export async function fetchServerMessages(chatId: string, limit: number = 50, offset: number = 0): Promise<Message[]> {
+  if (typeof window === 'undefined' || !chatId) return [];
+  try {
+    const res = await fetch(`/api/messages?chatId=${encodeURIComponent(chatId)}&limit=${limit}&offset=${offset}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.messages) ? data.messages : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Update message status via backend API (/api/messages/status)
+ */
+export async function updateServerMessageStatus(
+  messageId: string,
+  chatId: string,
+  userId: string,
+  status: 'sending' | 'sent' | 'delivered' | 'read'
+): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  try {
+    const res = await fetch('/api/messages/status', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId
+      },
+      body: JSON.stringify({ messageId, chatId, userId, status })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Server-side message search across user's authorized chats (/api/messages/search)
+ */
+export async function searchServerMessages(query: string, userId: string, chatId?: string): Promise<Message[]> {
+  if (typeof window === 'undefined' || !query || !userId) return [];
+  try {
+    let url = `/api/messages/search?q=${encodeURIComponent(query)}&userId=${encodeURIComponent(userId)}`;
+    if (chatId) url += `&chatId=${encodeURIComponent(chatId)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'x-user-id': userId
+      }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.messages) ? data.messages : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch community videos and reels from backend API (/api/community-videos)
+ */
+export async function fetchCommunityVideos(communityId: string): Promise<CommunityVideo[]> {
+  if (typeof window === 'undefined' || !communityId) return [];
+  try {
+    const res = await fetch(`/api/community-videos?communityId=${encodeURIComponent(communityId)}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.videos) ? data.videos : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Publish community video or reel to backend API (/api/community-videos)
+ */
+export async function saveCommunityVideo(video: Partial<CommunityVideo>): Promise<CommunityVideo | null> {
+  if (typeof window === 'undefined' || !video.communityId || !video.mediaUrl) return null;
+  try {
+    const res = await fetch('/api/community-videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(video)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.video || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Delete all community videos from backend API (/api/community-videos)
+ */
+export async function deleteAllCommunityVideos(communityId: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !communityId) return false;
+  try {
+    const res = await fetch(`/api/community-videos?communityId=${encodeURIComponent(communityId)}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Update community video (/api/community-videos PUT)
+ */
+export async function updateCommunityVideo(video: Partial<CommunityVideo>): Promise<boolean> {
+  if (typeof window === 'undefined' || !video.id) return false;
+  try {
+    const res = await fetch('/api/community-videos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(video)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delete single community video (/api/community-videos/one DELETE)
+ */
+export async function deleteCommunityVideo(videoId: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !videoId) return false;
+  try {
+    const res = await fetch(`/api/community-videos/one?videoId=${encodeURIComponent(videoId)}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Toggle like on community video or reel (/api/community-videos/like)
+ */
+export async function likeCommunityVideo(videoId: string, increment: boolean = true): Promise<boolean> {
+  if (typeof window === 'undefined' || !videoId) return false;
+  try {
+    const res = await fetch('/api/community-videos/like', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, increment })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Add comment to community video or reel (/api/community-videos/comment)
+ */
+export async function commentCommunityVideo(videoId: string, comment: CommunityVideoComment): Promise<boolean> {
+  if (typeof window === 'undefined' || !videoId || !comment) return false;
+  try {
+    const res = await fetch('/api/community-videos/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, comment })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Increment view count for community video (/api/community-videos/view)
+ */
+export async function incrementCommunityVideoView(videoId: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !videoId) return false;
+  try {
+    const res = await fetch('/api/community-videos/view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+
 
 export interface CallSignalPayload {
   type: 
@@ -628,6 +893,30 @@ export function subscribeToCallSignalsFromCloud(
       } catch {}
     }
   };
+}
+
+export async function fetchVideoWatchPosition(videoId: string, userId: string): Promise<number> {
+  try {
+    const res = await fetch(`/api/community-videos/watch-position?videoId=${encodeURIComponent(videoId)}&userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Number(data.positionSec || 0);
+  } catch {
+    return 0;
+  }
+}
+
+export async function saveVideoWatchPosition(videoId: string, userId: string, positionSec: number): Promise<boolean> {
+  try {
+    const res = await fetch('/api/community-videos/watch-position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, userId, positionSec })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 
