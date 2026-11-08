@@ -91,7 +91,7 @@ export const StartCallModal: React.FC<StartCallModalProps> = ({
           userId: acc.id,
           displayName: acc.displayName,
           username: acc.username,
-          phone: acc.phone || acc.email || 'Пользователь AuraChat',
+          phone: acc.phone || acc.email || 'Пользователь Chatix',
           avatarUrl: acc.avatarUrl,
           isOnline: true,
           statusText: 'в сети'

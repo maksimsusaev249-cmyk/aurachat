@@ -11,7 +11,7 @@ export function formatDateDDMMYY(date: Date): string {
   return `${dayStr}.${monthStr}.${yearStr}`;
 }
 
-const TIME_ANCHORS_STORAGE_KEY = 'aurachat_time_anchors_v1';
+const TIME_ANCHORS_STORAGE_KEY = 'chatix_time_anchors_v1';
 let memoryTimeAnchors: Record<string, number> | null = null;
 
 function getTimeAnchorsMap(): Record<string, number> {

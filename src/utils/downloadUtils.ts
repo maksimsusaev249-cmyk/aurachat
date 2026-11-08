@@ -13,7 +13,7 @@ export async function downloadMediaFile(
   onStatusChange?.('downloading');
 
   const ext = mediaType === 'video' ? 'mp4' : 'jpg';
-  const cleanName = (suggestedName || `aurachat_${mediaType}_${Date.now()}`)
+  const cleanName = (suggestedName || `chatix_${mediaType}_${Date.now()}`)
     .replace(/[^a-zA-Z0-9а-яА-ЯёЁ_-]/g, '_')
     .slice(0, 50);
   const fileName = cleanName.endsWith(`.${ext}`) ? cleanName : `${cleanName}.${ext}`;

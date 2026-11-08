@@ -746,7 +746,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
   };
 
   const handleCopyLink = () => {
-    const link = `https://aurachat.app/community/join?code=${community.inviteCode}`;
+    const link = `https://chatix.app/community/join?code=${community.inviteCode}`;
     navigator.clipboard.writeText(link);
     setIsCopied(true);
     playReactionSound();
@@ -1232,7 +1232,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#252526] border border-[#333334]">
                       <Globe className="w-3.5 h-3.5 text-[#71aaeb] shrink-0" />
                       <span className="text-xs text-[#71aaeb] font-mono truncate">
-                        aurachat.app/c/{community.inviteCode}
+                        chatix.app/c/{community.inviteCode}
                       </span>
                       <button
                         type="button"
@@ -1636,7 +1636,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                                         onClick={() =>
                                           downloadMediaFile(
                                             post.mediaUrl,
-                                            `aurachat_${community.title}_${post.id}`,
+                                            `chatix_${community.title}_${post.id}`,
                                             post.mediaType === 'video' ? 'video' : 'image'
                                           )
                                         }
@@ -2450,7 +2450,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     {community.isPrivate ? 'Приватная ссылка для приглашения' : 'Публичная ссылка сообщества'}
                   </span>
                   <div className="text-xs font-mono text-white break-all bg-[#222226] p-2.5 rounded-xl border border-[#333338]">
-                    {`https://aurachat.app/community/join?code=${community.inviteCode}`}
+                    {`https://chatix.app/community/join?code=${community.inviteCode}`}
                   </div>
                   <button
                     type="button"
@@ -2469,7 +2469,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 <div className="bg-white p-4 rounded-3xl w-52 h-52 mx-auto flex items-center justify-center shadow-xl">
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(
-                      `https://aurachat.app/community/join?code=${community.inviteCode}`
+                      `https://chatix.app/community/join?code=${community.inviteCode}`
                     )}&bgcolor=ffffff&color=0f172a&margin=8`}
                     alt="QR Code"
                     className="w-full h-full object-contain rounded-xl"
@@ -2720,7 +2720,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                     } else {
                       setPostMusic({
                         id: 'm_comm_' + Date.now(),
-                        title: 'AuraChat Community Anthem',
+                        title: 'Chatix Community Anthem',
                         artist: 'Official Synth',
                         duration: '3:15',
                         genre: 'synthwave'
@@ -3315,7 +3315,7 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 onClick={() =>
                   downloadMediaFile(
                     fullscreenMedia.url,
-                    `aurachat_${Date.now()}.${fullscreenMedia.type === 'video' ? 'mp4' : 'jpg'}`
+                    `chatix_${Date.now()}.${fullscreenMedia.type === 'video' ? 'mp4' : 'jpg'}`
                   )
                 }
                 className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
@@ -3957,12 +3957,12 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
                 {videoEditPrivacy === 'unlisted' && (
                   <div className="p-2.5 rounded-lg bg-[#19191a] border border-[#2e2e2e] flex items-center justify-between gap-2 text-xs">
                     <span className="font-mono text-[#71aaeb] truncate">
-                      {`https://aurachat.app/video/${editingVideo.id}`}
+                      {`https://chatix.app/video/${editingVideo.id}`}
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        navigator.clipboard.writeText(`https://aurachat.app/video/${editingVideo.id}`);
+                        navigator.clipboard.writeText(`https://chatix.app/video/${editingVideo.id}`);
                         setIsVideoLinkCopied(true);
                         playReactionSound();
                         setTimeout(() => setIsVideoLinkCopied(false), 2000);

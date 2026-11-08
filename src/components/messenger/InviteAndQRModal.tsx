@@ -45,8 +45,8 @@ export const InviteAndQRModal: React.FC<InviteAndQRModalProps> = ({
 
   const inviteCode = chat.inviteCode || chat.id.replace(/[^a-zA-Z0-9_]/g, '').slice(-8) || 'invite';
   const inviteLink = chat.isPrivate
-    ? `https://aurachat.app/join/private_${inviteCode}`
-    : `https://aurachat.app/join/${inviteCode}`;
+    ? `https://chatix.app/join/private_${inviteCode}`
+    : `https://chatix.app/join/${inviteCode}`;
 
   useEffect(() => {
     if (isOpen) {

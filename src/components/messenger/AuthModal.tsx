@@ -212,7 +212,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         phone: /^\+?\d+$/.test(target) ? target : undefined,
         email: target.includes('@') ? target : undefined,
         password: pass || undefined,
-        bio: 'Пользователь AuraChat',
+        bio: 'Пользователь Chatix',
         hasPin: false
       };
       onLogin(newLoggedUser);
@@ -314,7 +314,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(cleanTarget)}&backgroundColor=182533`,
         phone: view === 'login_phone' ? cleanTarget : undefined,
         email: view === 'login_email' ? cleanTarget : undefined,
-        bio: 'Пользователь AuraChat',
+        bio: 'Пользователь Chatix',
         hasPin: false
       };
       onLogin(newLoggedUser);
@@ -455,7 +455,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       phone: regContactType === 'phone' ? cleanContact : undefined,
       email: regContactType === 'email' ? cleanContact : undefined,
       password: regPassword,
-      bio: 'Пользователь AuraChat',
+      bio: 'Пользователь Chatix',
       pinCode: finalPin,
       hasPin: Boolean(finalPin)
     };
@@ -479,7 +479,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       {/* Top Bar: Secure Header (no unauthorized bypass) */}
       <div className="w-full max-w-md mx-auto px-6 pt-5 flex items-center justify-between shrink-0">
-        <span className="text-[11px] font-medium text-slate-400">AuraChat v2.5</span>
+        <span className="text-[11px] font-medium text-slate-400">Chatix v2.5</span>
         {onClose && (
           <button
             type="button"
@@ -524,7 +524,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                AuraChat
+                Chatix
               </h1>
               <p className="text-xs text-slate-400 text-center">
                 Безопасный мессенджер со сквозным шифрованием
@@ -600,14 +600,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
            ===================================================================== */}
         {view === 'login_unified' && (
           <form onSubmit={handleUnifiedLogin} className="flex flex-col space-y-5 animate-in fade-in">
-            {/* Круглый логотип и название AuraChat (верх скетча 2) */}
+            {/* Круглый логотип и название Chatix (верх скетча 2) */}
             <div className="flex flex-col items-center space-y-2">
               <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#0077FF] via-[#5288c1] to-cyan-400 p-0.5 shadow-lg flex items-center justify-center">
                 <div className="w-full h-full rounded-full bg-[#17212b] flex items-center justify-center">
                   <MessageSquare className="w-7 h-7 text-[#64b5f6]" />
                 </div>
               </div>
-              <h2 className="text-2xl font-extrabold text-white tracking-tight">AuraChat</h2>
+              <h2 className="text-2xl font-extrabold text-white tracking-tight">Chatix</h2>
               <p className="text-xs text-slate-400">Вход по контактным данным и паролю</p>
             </div>
 

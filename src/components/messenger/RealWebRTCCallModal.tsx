@@ -2014,7 +2014,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
                       : 'bg-[#1a2634] border-[#283748] text-slate-300'
                   }`}
                 >
-                  🎵 Мелодия AuraChat
+                  🎵 Мелодия Chatix
                 </button>
               </div>
 

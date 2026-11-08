@@ -99,17 +99,17 @@ export default function App() {
   // Application State
   const [currentUser, setCurrentUser] = useState<User>(() => {
     try {
-      const v3 = localStorage.getItem('aurachat_currentUser_v3');
+      const v3 = localStorage.getItem('chatix_currentUser_v3');
       if (v3) {
         const parsed = JSON.parse(v3);
         if (parsed && parsed.id && !isMockOrDemoAccount(parsed)) return parsed;
       }
-      const saved = localStorage.getItem('aurachat_currentUser');
+      const saved = localStorage.getItem('chatix_currentUser');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.id && !isMockOrDemoAccount(parsed)) return parsed;
       }
-      const myAccs = localStorage.getItem('aurachat_my_accounts_v5') || localStorage.getItem('aurachat_savedAccounts_v3');
+      const myAccs = localStorage.getItem('chatix_my_accounts_v5') || localStorage.getItem('chatix_savedAccounts_v3');
       if (myAccs) {
         const list: User[] = JSON.parse(myAccs);
         const realAcc = Array.isArray(list) ? list.find((u) => u && u.id && !isMockOrDemoAccount(u) && /^u_\d{10,}$/.test(u.id)) : null;
@@ -145,8 +145,8 @@ export default function App() {
       );
     };
     try {
-      const savedMapRaw = localStorage.getItem('aurachat_userChatsMap_v2');
-      const savedUserRaw = localStorage.getItem('aurachat_currentUser');
+      const savedMapRaw = localStorage.getItem('chatix_userChatsMap_v2');
+      const savedUserRaw = localStorage.getItem('chatix_currentUser');
       const activeUid = savedUserRaw ? JSON.parse(savedUserRaw).id : initialCurrentUser.id;
       if (savedMapRaw) {
         const parsedMap = JSON.parse(savedMapRaw);
@@ -154,7 +154,7 @@ export default function App() {
           return sanitizeChats(parsedMap[activeUid]);
         }
       }
-      const saved = localStorage.getItem('aurachat_active_chats_v2');
+      const saved = localStorage.getItem('chatix_active_chats_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return sanitizeChats(parsed);
@@ -164,7 +164,7 @@ export default function App() {
   });
   const [globalCatalogChats, setGlobalCatalogChats] = useState<Chat[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_global_chats_v2');
+      const saved = localStorage.getItem('chatix_global_chats_v2');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return initialChats;
@@ -203,14 +203,14 @@ export default function App() {
       return clean;
     };
     try {
-      const saved = localStorage.getItem('aurachat_messagesMap_v2');
+      const saved = localStorage.getItem('chatix_messagesMap_v2');
       if (saved) return dedupeMap(JSON.parse(saved));
     } catch (e) {}
     return dedupeMap(initialMessages);
   });
   const [stories, setStories] = useState<Story[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_user_stories_v2');
+      const saved = localStorage.getItem('chatix_user_stories_v2');
       if (saved) {
         const parsed: Story[] = JSON.parse(saved);
         return parsed
@@ -225,8 +225,8 @@ export default function App() {
   });
   const [visitCycle] = useState<number>(() => {
     try {
-      const next = (Number(localStorage.getItem('aurachat_visit_cycle')) || 0) + 1;
-      localStorage.setItem('aurachat_visit_cycle', String(next));
+      const next = (Number(localStorage.getItem('chatix_visit_cycle')) || 0) + 1;
+      localStorage.setItem('chatix_visit_cycle', String(next));
       return next;
     } catch (e) {
       return 1;
@@ -234,7 +234,7 @@ export default function App() {
   });
   const [reels, setReels] = useState<Post[]>(() => {
     try {
-      const savedGlobal = localStorage.getItem('aurachat_global_reels_v3') || localStorage.getItem('aurachat_user_reels_v2');
+      const savedGlobal = localStorage.getItem('chatix_global_reels_v3') || localStorage.getItem('chatix_user_reels_v2');
       if (savedGlobal) {
         const parsed: Post[] = JSON.parse(savedGlobal);
         return parsed
@@ -250,7 +250,7 @@ export default function App() {
   });
   const [posts, setPosts] = useState<Post[]>(() => {
     try {
-      const savedGlobal = localStorage.getItem('aurachat_global_posts_v3') || localStorage.getItem('aurachat_user_posts_v2');
+      const savedGlobal = localStorage.getItem('chatix_global_posts_v3') || localStorage.getItem('chatix_user_posts_v2');
       if (savedGlobal) {
         const parsed: Post[] = JSON.parse(savedGlobal);
         return parsed
@@ -278,7 +278,7 @@ export default function App() {
   // Реестр навсегда удалённых ID (посты, сообщения, чаты, звонки), чтобы серверная синхронизация не возвращала их обратно
   const [deletedIds, setDeletedIds] = useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem('aurachat_deleted_ids_v1');
+      const raw = localStorage.getItem('chatix_deleted_ids_v1');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed;
@@ -291,7 +291,7 @@ export default function App() {
   useEffect(() => {
     deletedIdsRef.current = new Set(deletedIds);
     try {
-      localStorage.setItem('aurachat_deleted_ids_v1', JSON.stringify(deletedIds));
+      localStorage.setItem('chatix_deleted_ids_v1', JSON.stringify(deletedIds));
     } catch {}
   }, [deletedIds]);
 
@@ -309,27 +309,27 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_user_stories_v2', JSON.stringify(stories));
+      localStorage.setItem('chatix_user_stories_v2', JSON.stringify(stories));
     } catch (e) {}
   }, [stories]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_user_reels_v2', JSON.stringify(reels));
-      localStorage.setItem('aurachat_global_reels_v3', JSON.stringify(reels));
+      localStorage.setItem('chatix_user_reels_v2', JSON.stringify(reels));
+      localStorage.setItem('chatix_global_reels_v3', JSON.stringify(reels));
     } catch (e) {}
   }, [reels]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_user_posts_v2', JSON.stringify(posts));
-      localStorage.setItem('aurachat_global_posts_v3', JSON.stringify(posts));
+      localStorage.setItem('chatix_user_posts_v2', JSON.stringify(posts));
+      localStorage.setItem('chatix_global_posts_v3', JSON.stringify(posts));
     } catch (e) {}
   }, [posts]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_global_chats_v2', JSON.stringify(globalCatalogChats));
+      localStorage.setItem('chatix_global_chats_v2', JSON.stringify(globalCatalogChats));
     } catch (e) {}
   }, [globalCatalogChats]);
 
@@ -401,7 +401,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'POST_LIKE_TOGGLE', postId, likesCount: updatedLikesCount });
         ch.close();
       }
@@ -433,7 +433,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'DELETE_POST_COMMENT', postId, commentId });
         ch.close();
       }
@@ -448,22 +448,22 @@ export default function App() {
     setPosts((prev) => {
       const next = prev.filter((p) => p.id !== postId);
       try {
-        localStorage.setItem('aurachat_user_posts_v2', JSON.stringify(next));
-        localStorage.setItem('aurachat_global_posts_v3', JSON.stringify(next));
+        localStorage.setItem('chatix_user_posts_v2', JSON.stringify(next));
+        localStorage.setItem('chatix_global_posts_v3', JSON.stringify(next));
       } catch {}
       return next;
     });
     setReels((prev) => {
       const next = prev.filter((r) => r.id !== postId);
       try {
-        localStorage.setItem('aurachat_user_reels_v2', JSON.stringify(next));
-        localStorage.setItem('aurachat_global_reels_v3', JSON.stringify(next));
+        localStorage.setItem('chatix_user_reels_v2', JSON.stringify(next));
+        localStorage.setItem('chatix_global_reels_v3', JSON.stringify(next));
       } catch {}
       return next;
     });
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'DELETE_POST', postId });
         ch.close();
       }
@@ -495,7 +495,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_POST_COMMENT', postId, comment });
         ch.close();
       }
@@ -511,7 +511,7 @@ export default function App() {
   // App Mode State: Simple Mode (только контакты, чаты, звонки, группы и каналы) vs Standard Mode
   const [isSimpleMode, setIsSimpleMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('aurachat_simple_mode') === 'true';
+      return localStorage.getItem('chatix_simple_mode') === 'true';
     } catch {
       return false;
     }
@@ -520,7 +520,7 @@ export default function App() {
   const handleToggleSimpleMode = (enabled: boolean) => {
     setIsSimpleMode(enabled);
     try {
-      localStorage.setItem('aurachat_simple_mode', String(enabled));
+      localStorage.setItem('chatix_simple_mode', String(enabled));
     } catch {}
     if (enabled && (activeScreen === 'reels' || activeScreen === 'posts')) {
       setActiveScreen('chats');
@@ -530,12 +530,12 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [lastLoggedUser, setLastLoggedUser] = useState<User | null>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_currentUser_v3');
+      const saved = localStorage.getItem('chatix_currentUser_v3');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && !isMockOrDemoAccount(parsed)) return parsed;
       }
-      const legacy = localStorage.getItem('aurachat_currentUser');
+      const legacy = localStorage.getItem('chatix_currentUser');
       if (legacy) {
         const parsed = JSON.parse(legacy);
         if (parsed && !isMockOrDemoAccount(parsed)) {
@@ -557,7 +557,7 @@ export default function App() {
       u.id === 'u_maksim_1';
 
     try {
-      const v5 = localStorage.getItem('aurachat_my_accounts_v5');
+      const v5 = localStorage.getItem('chatix_my_accounts_v5');
       if (v5) {
         const parsed: User[] = JSON.parse(v5);
         if (Array.isArray(parsed)) {
@@ -565,7 +565,7 @@ export default function App() {
           if (clean.length > 0) return clean;
         }
       }
-      const saved = localStorage.getItem('aurachat_savedAccounts_v3') || localStorage.getItem('aurachat_savedAccounts');
+      const saved = localStorage.getItem('chatix_savedAccounts_v3') || localStorage.getItem('chatix_savedAccounts');
       if (saved) {
         const parsed: User[] = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -629,7 +629,7 @@ export default function App() {
   // User accounts chat storage: maps userId -> Chat[]
   const [userChatsMap, setUserChatsMap] = useState<Record<string, Chat[]>>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_userChatsMap_v2');
+      const saved = localStorage.getItem('chatix_userChatsMap_v2');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {};
@@ -638,12 +638,12 @@ export default function App() {
   // User authentication and session state: Defaults to false so first screen is Login / Registration
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_isLoggedIn_v3');
+      const saved = localStorage.getItem('chatix_isLoggedIn_v3');
       if (saved !== null) return JSON.parse(saved);
-      const legacy = localStorage.getItem('aurachat_isLoggedIn');
+      const legacy = localStorage.getItem('chatix_isLoggedIn');
       if (legacy !== null) {
         const parsedLegacy = JSON.parse(legacy);
-        const savedAccs = localStorage.getItem('aurachat_savedAccounts_v3') || localStorage.getItem('aurachat_savedAccounts');
+        const savedAccs = localStorage.getItem('chatix_savedAccounts_v3') || localStorage.getItem('chatix_savedAccounts');
         if (parsedLegacy && savedAccs) {
           const parsedList: User[] = JSON.parse(savedAccs);
           const hasRealUser = parsedList.some(
@@ -659,8 +659,8 @@ export default function App() {
   // LocalStorage persistence Effects
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_currentUser', JSON.stringify(currentUser));
-      localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(currentUser));
+      localStorage.setItem('chatix_currentUser', JSON.stringify(currentUser));
+      localStorage.setItem('chatix_currentUser_v3', JSON.stringify(currentUser));
       if (!isFirestoreQuotaExceeded()) {
         syncAccountToCloud(currentUser);
       }
@@ -670,25 +670,25 @@ export default function App() {
   useEffect(() => {
     try {
       const cleanAccs = savedAccounts.filter((a) => !isMockOrDemoAccount(a));
-      localStorage.setItem('aurachat_my_accounts_v5', JSON.stringify(cleanAccs));
-      localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(cleanAccs));
-      localStorage.setItem('aurachat_savedAccounts', JSON.stringify(cleanAccs));
+      localStorage.setItem('chatix_my_accounts_v5', JSON.stringify(cleanAccs));
+      localStorage.setItem('chatix_savedAccounts_v3', JSON.stringify(cleanAccs));
+      localStorage.setItem('chatix_savedAccounts', JSON.stringify(cleanAccs));
     } catch (e) {}
   }, [savedAccounts]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_isLoggedIn', JSON.stringify(isLoggedIn));
-      localStorage.setItem('aurachat_isLoggedIn_v3', JSON.stringify(isLoggedIn));
+      localStorage.setItem('chatix_isLoggedIn', JSON.stringify(isLoggedIn));
+      localStorage.setItem('chatix_isLoggedIn_v3', JSON.stringify(isLoggedIn));
     } catch (e) {}
   }, [isLoggedIn]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_active_chats_v2', JSON.stringify(chats));
+      localStorage.setItem('chatix_active_chats_v2', JSON.stringify(chats));
       setUserChatsMap((prev) => {
         const next = { ...prev, [currentUser.id]: chats };
-        localStorage.setItem('aurachat_userChatsMap_v2', JSON.stringify(next));
+        localStorage.setItem('chatix_userChatsMap_v2', JSON.stringify(next));
         return next;
       });
     } catch (e) {}
@@ -696,7 +696,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_messagesMap_v2', JSON.stringify(messagesMap));
+      localStorage.setItem('chatix_messagesMap_v2', JSON.stringify(messagesMap));
     } catch (e) {}
   }, [messagesMap]);
 
@@ -707,7 +707,7 @@ export default function App() {
   const broadcastUserPresence = (userToBroadcast: User) => {
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({
           type: 'USER_PRESENCE_UPDATE',
           user: userToBroadcast
@@ -768,7 +768,7 @@ export default function App() {
         [enteringUser.id]: prev[enteringUser.id]?.length ? prev[enteringUser.id] : targetChats
       };
       try {
-        localStorage.setItem('aurachat_userChatsMap_v2', JSON.stringify(next));
+        localStorage.setItem('chatix_userChatsMap_v2', JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -793,15 +793,15 @@ export default function App() {
       }
       const nextList = Array.from(map.values());
       try {
-        localStorage.setItem('aurachat_my_accounts_v5', JSON.stringify(nextList));
-        localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(nextList));
+        localStorage.setItem('chatix_my_accounts_v5', JSON.stringify(nextList));
+        localStorage.setItem('chatix_savedAccounts_v3', JSON.stringify(nextList));
       } catch {}
       return nextList;
     });
 
     try {
-      localStorage.setItem('aurachat_currentUser', JSON.stringify(enteringUser));
-      localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(enteringUser));
+      localStorage.setItem('chatix_currentUser', JSON.stringify(enteringUser));
+      localStorage.setItem('chatix_currentUser_v3', JSON.stringify(enteringUser));
     } catch {}
 
     if (exitingUser.id !== enteringUser.id && !isMockOrDemoAccount(exitingUser)) {
@@ -878,7 +878,7 @@ export default function App() {
 
     if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        const channel = new BroadcastChannel('chatix_live_messages_sync');
         channel.postMessage({ type: 'CLEAR_CHAT_HISTORY', chatId });
         channel.close();
       } catch {}
@@ -923,7 +923,7 @@ export default function App() {
 
     if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        const channel = new BroadcastChannel('chatix_live_messages_sync');
         channel.postMessage({ type: 'DELETE_MESSAGE_FOR_BOTH', chatId, messageId });
         channel.close();
       } catch {}
@@ -938,7 +938,7 @@ export default function App() {
 
     if (forBoth && typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        const channel = new BroadcastChannel('chatix_live_messages_sync');
         channel.postMessage({ type: 'DELETE_CHAT_FOR_BOTH', chatId });
         channel.close();
       } catch {}
@@ -1059,7 +1059,7 @@ export default function App() {
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        const channel = new BroadcastChannel('chatix_live_messages_sync');
         channel.postMessage({
           type: 'CREATE_SECRET_CHAT',
           normalChatId,
@@ -1111,7 +1111,7 @@ export default function App() {
 
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        const channel = new BroadcastChannel('aurachat_live_messages_sync');
+        const channel = new BroadcastChannel('chatix_live_messages_sync');
         channel.postMessage({
           type: 'END_SECRET_CHAT',
           normalChatId,
@@ -1223,7 +1223,7 @@ export default function App() {
           senderName: 'Избранное',
           senderAvatar: newSavedChat.avatarUrl,
           type: 'text',
-          content: '🌟 Добро пожаловать в AuraChat! Это ваше персональное облако «Избранное». Здесь можно безопасно хранить важные заметки, файлы и медиа. Только вы имеете доступ к этим сообщениям.',
+          content: '🌟 Добро пожаловать в Chatix! Это ваше персональное облако «Избранное». Здесь можно безопасно хранить важные заметки, файлы и медиа. Только вы имеете доступ к этим сообщениям.',
           createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'read'
         }
@@ -1276,7 +1276,7 @@ export default function App() {
   };
   const [deviceViewMode, setDeviceViewMode] = useState<'auto' | 'duo' | 'folded'>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_deviceViewMode');
+      const saved = localStorage.getItem('chatix_deviceViewMode');
       if (saved === 'duo' || saved === 'folded' || saved === 'auto') return saved;
     } catch {}
     return 'auto';
@@ -1286,7 +1286,7 @@ export default function App() {
     setDeviceViewMode((prev) => {
       const next = prev === 'auto' ? 'duo' : prev === 'duo' ? 'folded' : 'auto';
       try {
-        localStorage.setItem('aurachat_deviceViewMode', next);
+        localStorage.setItem('chatix_deviceViewMode', next);
       } catch {}
       triggerToast(
         next === 'duo'
@@ -1305,7 +1305,7 @@ export default function App() {
   const [createChatDefaultType, setCreateChatDefaultType] = useState<'group' | 'channel' | 'direct' | 'community'>('group');
   const [communities, setCommunities] = useState<Community[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_communities_v2');
+      const saved = localStorage.getItem('chatix_communities_v2');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return initialCommunities;
@@ -1398,7 +1398,7 @@ export default function App() {
     }
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_POST', post: newPost });
         ch.close();
       }
@@ -1416,7 +1416,7 @@ export default function App() {
   const [activeCallSession, setActiveCallSession] = useState<CallSession | null>(null);
   const [userCallsMap, setUserCallsMap] = useState<Record<string, CallRecord[]>>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_userCallsMap_v3');
+      const saved = localStorage.getItem('chatix_userCallsMap_v3');
       if (saved) {
         const parsed = JSON.parse(saved);
         const cleaned: Record<string, CallRecord[]> = {};
@@ -1432,10 +1432,10 @@ export default function App() {
   });
   const [calls, setCalls] = useState<CallRecord[]>(() => {
     try {
-      localStorage.removeItem('aurachat_calls_v2');
-      const savedUserRaw = localStorage.getItem('aurachat_currentUser');
+      localStorage.removeItem('chatix_calls_v2');
+      const savedUserRaw = localStorage.getItem('chatix_currentUser');
       const activeUid = savedUserRaw ? JSON.parse(savedUserRaw).id : initialCurrentUser.id;
-      const savedMapRaw = localStorage.getItem('aurachat_userCallsMap_v3');
+      const savedMapRaw = localStorage.getItem('chatix_userCallsMap_v3');
       if (savedMapRaw) {
         const parsedMap = JSON.parse(savedMapRaw);
         const list: CallRecord[] = parsedMap[activeUid] || [];
@@ -1456,7 +1456,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurachat_communities_v2', JSON.stringify(communities));
+      localStorage.setItem('chatix_communities_v2', JSON.stringify(communities));
     } catch (e) {}
   }, [communities]);
 
@@ -1464,7 +1464,7 @@ export default function App() {
     try {
       setUserCallsMap((prev) => {
         const next = { ...prev, [currentUser.id]: calls };
-        localStorage.setItem('aurachat_userCallsMap_v3', JSON.stringify(next));
+        localStorage.setItem('chatix_userCallsMap_v3', JSON.stringify(next));
         return next;
       });
     } catch (e) {}
@@ -1721,7 +1721,7 @@ export default function App() {
             if (prev) return prev;
             return {
               direction: 'incoming',
-              contactName: signal.callerName || signal.callerUsername || 'Входящий звонок AuraChat',
+              contactName: signal.callerName || signal.callerUsername || 'Входящий звонок Chatix',
               avatarUrl: signal.callerAvatar || 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
               isVideo: Boolean(signal.isVideo),
               callId: signal.callId,
@@ -1768,7 +1768,7 @@ export default function App() {
           if (prev) return prev;
           return {
             direction: 'incoming',
-            contactName: data.contactName || 'Входящий звонок AuraChat',
+            contactName: data.contactName || 'Входящий звонок Chatix',
             avatarUrl: data.avatarUrl || 'https://api.dicebear.com/7.x/adventurer/svg?seed=Subscriber&backgroundColor=182533',
             isVideo: Boolean(data.isVideo),
             callId: data.callId,
@@ -1784,7 +1784,7 @@ export default function App() {
     };
 
     // Live cross-tab messenger sync: messages sent in one tab (e.g. manager) sync to other tab (user)
-    const msgChannel = new BroadcastChannel('aurachat_live_messages_sync');
+    const msgChannel = new BroadcastChannel('chatix_live_messages_sync');
     msgChannel.onmessage = (event) => {
       const data = event.data;
       if (!data) return;
@@ -2040,7 +2040,7 @@ export default function App() {
 
       if (isCurrentlyOpen && isFromOthers) {
         try {
-          const readCh = new BroadcastChannel('aurachat_live_messages_sync');
+          const readCh = new BroadcastChannel('chatix_live_messages_sync');
           readCh.postMessage({
             type: 'CHAT_READ_AND_ONLINE',
             chatId: data.chatId,
@@ -2154,7 +2154,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({
           type: 'CHAT_READ_AND_ONLINE',
           chatId: activeId,
@@ -2446,7 +2446,7 @@ export default function App() {
     // Broadcast live message to other tabs/windows so real managers/users chat across tabs
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const msgChannel = new BroadcastChannel('aurachat_live_messages_sync');
+        const msgChannel = new BroadcastChannel('chatix_live_messages_sync');
         msgChannel.postMessage({
           type: 'NEW_CHAT_MESSAGE',
           chatId: activeChatId,
@@ -2462,7 +2462,7 @@ export default function App() {
     setStories((prev) => [newStory, ...prev]);
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_STORY', story: newStory });
         ch.close();
       }
@@ -2530,8 +2530,8 @@ export default function App() {
         setSavedAccounts((accs) => {
           const nextAccs = accs.map((a) => (a.id === exitedUser.id ? exitedUser : a));
           try {
-            localStorage.setItem('aurachat_savedAccounts_v3', JSON.stringify(nextAccs));
-            localStorage.setItem('aurachat_currentUser_v3', JSON.stringify(exitedUser));
+            localStorage.setItem('chatix_savedAccounts_v3', JSON.stringify(nextAccs));
+            localStorage.setItem('chatix_currentUser_v3', JSON.stringify(exitedUser));
           } catch {}
           return nextAccs;
         });
@@ -2607,7 +2607,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_REEL', reel: formattedReel });
         ch.close();
       }
@@ -2644,7 +2644,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_POST', post: formattedPost });
         ch.close();
       }
@@ -2671,7 +2671,7 @@ export default function App() {
     setStories((prev) => [newStory, ...prev]);
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        const ch = new BroadcastChannel('aurachat_live_messages_sync');
+        const ch = new BroadcastChannel('chatix_live_messages_sync');
         ch.postMessage({ type: 'NEW_STORY', story: newStory });
         ch.close();
       }
@@ -2691,7 +2691,7 @@ export default function App() {
       );
       try {
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-          const ch = new BroadcastChannel('aurachat_live_messages_sync');
+          const ch = new BroadcastChannel('chatix_live_messages_sync');
           ch.postMessage({ type: 'NEW_GLOBAL_CHAT', chat: newChat });
           ch.close();
         }
@@ -3312,7 +3312,7 @@ export default function App() {
           <div className="flex items-center gap-2 min-w-0 flex-1 text-[11px] sm:text-xs">
             <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 animate-pulse" />
             <span className="truncate">
-              AuraChat: локальный режим (квота облака исчерпана).
+              Chatix: локальный режим (квота облака исчерпана).
             </span>
             <a
               href="https://console.firebase.google.com/project/gen-lang-client-0852394880/firestore/databases/ai-studio-telegrammhybridm-0a97c053-a08d-487b-81be-fc2833f735e6/data?openUpgradeDialog=true"
@@ -3333,7 +3333,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main AuraChat Body */}
+      {/* Main Chatix Body */}
       <div className="flex-1 min-h-0 min-w-0 w-full flex overflow-hidden">
         {/* Left Sidebar Menu (Desktop only when deviceViewMode === 'auto') */}
         <div
@@ -3342,17 +3342,17 @@ export default function App() {
           } flex-col justify-between py-3 px-2 bg-[#141414] border-r border-[#2e2e2e] w-16 lg:w-52 shrink-0 z-20`}
         >
           <div className="space-y-1 flex flex-col">
-            {/* Brand Header: AuraChat */}
+            {/* Brand Header: Chatix */}
             <div
               onClick={() => setIsMainMenuOpen(true)}
               className="w-full px-2.5 py-2 mb-1 rounded-lg hover:bg-[#222222]/70 transition cursor-pointer flex items-center justify-center lg:justify-start gap-2.5"
-              title="Меню AuraChat"
+              title="Меню Chatix"
             >
               <div className="w-7 h-7 rounded-lg bg-[#0077FF] flex items-center justify-center text-white font-black text-xs tracking-tighter shrink-0 shadow-xs">
                 AC
               </div>
               <span className="hidden lg:inline font-bold text-sm text-white tracking-tight truncate">
-                AuraChat
+                Chatix
               </span>
             </div>
 
@@ -4107,7 +4107,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white leading-none">Ещё</h3>
-                  <p className="text-[11px] text-[#939393] mt-0.5">Сервисы и разделы AuraChat</p>
+                  <p className="text-[11px] text-[#939393] mt-0.5">Сервисы и разделы Chatix</p>
                 </div>
               </div>
               <button

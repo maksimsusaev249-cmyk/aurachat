@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const isProd = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
-const DB_FILE_PATH = path.resolve(__dirname, '.aurachat-shared-db.json');
+const DB_FILE_PATH = path.resolve(__dirname, '.chatix-shared-db.json');
 
 // --- PostgreSQL Database Integration ---
 const pgConnectionString = process.env.DATABASE_URL;
@@ -547,7 +547,7 @@ function loadServerState(): ServerPlatformState {
       };
     }
   } catch (err) {
-    console.warn('Could not load .aurachat-shared-db.json, starting fresh:', err);
+    console.warn('Could not load .chatix-shared-db.json, starting fresh:', err);
   }
   return { ...defaultServerState };
 }
@@ -613,7 +613,7 @@ function mergeUsersAndExtractDirectory(state: ServerPlatformState, incomingUsers
           `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(rawName || targetId)}&backgroundColor=182533`,
         phone: u.phone || undefined,
         email: u.email || undefined,
-        bio: u.bio || 'Пользователь AuraChat',
+        bio: u.bio || 'Пользователь Chatix',
         isOnline: u.isOnline ?? true,
         lastSeen: u.lastSeen || 'в сети',
         pinCode: u.pinCode,
@@ -1490,7 +1490,7 @@ async function createServer() {
         if (fs.existsSync(rootIndex)) {
           res.sendFile(rootIndex);
         } else {
-          res.status(404).send('AuraChat dist/index.html not found');
+          res.status(404).send('Chatix dist/index.html not found');
         }
       }
     });
@@ -1500,13 +1500,13 @@ async function createServer() {
       if (fs.existsSync(rootIndex)) {
         res.sendFile(rootIndex);
       } else {
-        res.status(404).send('AuraChat index.html not found');
+        res.status(404).send('Chatix index.html not found');
       }
     });
   }
 
   app.listen(PORT, () => {
-    console.log(`🚀 AuraChat Shared Server running on port ${PORT} (${isProd ? 'production' : 'development'})`);
+    console.log(`🚀 Chatix Shared Server running on port ${PORT} (${isProd ? 'production' : 'development'})`);
   });
 }
 

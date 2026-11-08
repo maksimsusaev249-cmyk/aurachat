@@ -117,7 +117,7 @@ export interface CustomStickerPack {
   stickers: CustomStickerItem[];
 }
 
-const STICKER_STORAGE_KEY = 'aurachat_custom_sticker_packs_v1';
+const STICKER_STORAGE_KEY = 'chatix_custom_sticker_packs_v1';
 
 const defaultStickerPacks: CustomStickerPack[] = [
   {
@@ -463,7 +463,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     triggerToast(chat.type === 'channel' ? 'Вы покинули канал' : 'Вы покинули группу');
   };
 
-  // Handle Send: реальная отправка сообщения в AuraChat (или мгновенный вход в скрытый секретный чат при вводе PIN)
+  // Handle Send: реальная отправка сообщения в Chatix (или мгновенный вход в скрытый секретный чат при вводе PIN)
   const handleSend = () => {
     if (isBlocked) {
       triggerToast('Собеседник заблокирован. Разблокируйте, чтобы отправлять сообщения.');
@@ -514,7 +514,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleCopyInvite = () => {
     const code = chat.inviteCode || chat.id.replace(/^chat_/, '');
-    navigator.clipboard.writeText(`https://aurachat.app/join/${code}`);
+    navigator.clipboard.writeText(`https://chatix.app/join/${code}`);
     setShowInviteCopied(true);
     setTimeout(() => setShowInviteCopied(false), 2000);
   };
@@ -558,7 +558,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   // Копирование публичной / приватной ссылки на стикерпак владельца
   const handleCopyStickerPackLink = (pack: CustomStickerPack) => {
     const code = pack.shareCode || pack.id.replace(/^pack_/, '');
-    const packUrl = `https://aurachat.app/stickers/${code}`;
+    const packUrl = `https://chatix.app/stickers/${code}`;
     navigator.clipboard.writeText(packUrl);
     playReactionSound();
     triggerToast(`📋 Ссылка на стикерпак «${pack.name}» скопирована!`);
@@ -1110,7 +1110,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             className={`p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
               isChatSearchOpen ? 'bg-[#0077FF] text-white' : 'hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white'
             }`}
-            title="Поиск по истории сообщений в чате AuraChat"
+            title="Поиск по истории сообщений в чате Chatix"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -1158,7 +1158,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     }}
                     disabled={isBlocked}
                     className="p-1.5 rounded-lg hover:bg-[#2c2d2e] text-[#71aaeb] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer shrink-0"
-                    title={isBlocked ? 'Собеседник заблокирован' : 'Аудиозвонок AuraChat'}
+                    title={isBlocked ? 'Собеседник заблокирован' : 'Аудиозвонок Chatix'}
                   >
                     <Phone className="w-4 h-4" />
                   </button>
@@ -1704,7 +1704,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <span className="text-2xl">👾</span>
               <div>
                 <div className="font-bold text-white text-xs flex items-center gap-1.5">
-                  <span>Общий GIF-каталог AuraChat</span>
+                  <span>Общий GIF-каталог Chatix</span>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#0077FF]/20 text-[#71aaeb] font-mono">LIVE</span>
                 </div>
                 <div className="text-[11px] text-[#939393] leading-tight mt-0.5">
@@ -1963,7 +1963,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              downloadMediaFile(msg.mediaUrl || msg.senderAvatar, `aurachat_video_note_${msg.id}`, 'video');
+                              downloadMediaFile(msg.mediaUrl || msg.senderAvatar, `chatix_video_note_${msg.id}`, 'video');
                             }}
                             className="px-2 py-0.5 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-[10px] font-semibold text-white flex items-center gap-1 cursor-pointer transition"
                             title="Скачать кружочек"
@@ -2058,7 +2058,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           onClick={(e) => {
                             e.stopPropagation();
                             const isVid = msg.mediaUrl!.startsWith('data:video/') || /\.(mp4|webm|mov|ogg)($|\?)/i.test(msg.mediaUrl!) || msg.mediaMeta?.isVideo;
-                            downloadMediaFile(msg.mediaUrl!, `aurachat_media_${msg.id}`, isVid ? 'video' : 'image');
+                            downloadMediaFile(msg.mediaUrl!, `chatix_media_${msg.id}`, isVid ? 'video' : 'image');
                           }}
                           className="mt-1 px-2.5 py-1 rounded-lg bg-[#2c2d2e] hover:bg-[#0077FF] text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition w-fit"
                           title="Скачать медиафайл"
@@ -2097,7 +2097,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#0077FF]/20 text-[#71aaeb]">
-                              {msg.mediaMeta?.trimmedLengthSec ? `${msg.mediaMeta.trimmedLengthSec} сек` : 'AuraChat Музыка'}
+                              {msg.mediaMeta?.trimmedLengthSec ? `${msg.mediaMeta.trimmedLengthSec} сек` : 'Chatix Музыка'}
                             </span>
                             <span className="text-[9px] font-mono text-[#828282]">
                               {msg.mediaMeta?.durationSec ? `00:${msg.mediaMeta.durationSec < 10 ? '0' : ''}${msg.mediaMeta.durationSec}` : ''}
@@ -3076,7 +3076,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <img src={lightboxImage} alt="" className="max-h-[82vh] rounded-2xl object-contain shadow-2xl" />
             <div className="mt-3 flex items-center justify-center gap-3">
               <button
-                onClick={() => downloadMediaFile(lightboxImage, `aurachat_photo_${Date.now()}`, 'image')}
+                onClick={() => downloadMediaFile(lightboxImage, `chatix_photo_${Date.now()}`, 'image')}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg cursor-pointer transition"
               >
                 <Download className="w-4 h-4" />

@@ -149,7 +149,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         displayName: matchedSavedUser?.displayName || targetUser!.name,
         username: matchedSavedUser?.username || targetUser!.username,
         avatarUrl: matchedSavedUser?.avatarUrl || targetUser!.avatar,
-        bio: matchedSavedUser?.bio || targetUser!.bio || 'Пользователь платформы AuraChat',
+        bio: matchedSavedUser?.bio || targetUser!.bio || 'Пользователь платформы Chatix',
         isOnline: matchedSavedUser
           ? matchedSavedUser.hideOnlineStatus
             ? false
@@ -192,7 +192,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     <div className="flex-1 h-full bg-[#141414] overflow-y-auto p-3 sm:p-5 flex flex-col items-center select-none text-[#e1e3e6] scrollbar-thin">
       <div className="w-full max-w-3xl space-y-4 pb-28 sm:pb-20">
         
-        {/* AuraChat Profile Top Navigation Bar */}
+        {/* Chatix Profile Top Navigation Bar */}
         <div className="px-3.5 py-2.5 rounded-2xl bg-[#222222] border border-[#2e2e2e] flex items-center justify-between">
           <button
             onClick={onBackToChats}
@@ -203,7 +203,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </button>
           
           <div className="font-bold text-xs sm:text-sm text-white flex items-center gap-2">
-            <span>Профиль AuraChat · @{activeProfileUser.username}</span>
+            <span>Профиль Chatix · @{activeProfileUser.username}</span>
             {isMe && currentUser.hideOnlineStatus && (
               <span className="p-1 rounded-full bg-[#2c2d2e] text-[#939393]" title="Невидимка включен">
                 <EyeOff className="w-3 h-3" />
@@ -377,7 +377,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
             {/* Bio / Status Line */}
             <p className="text-xs sm:text-[13px] text-[#e1e3e6] leading-relaxed mt-3 text-center sm:text-left">
-              {activeProfileUser.bio || 'Пользователь платформы AuraChat. Скорость, дизайн и безопасность.'}
+              {activeProfileUser.bio || 'Пользователь платформы Chatix. Скорость, дизайн и безопасность.'}
             </p>
 
             {/* Extra Actions & Counters Row in VK Style */}
@@ -790,7 +790,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     onClick={() =>
                       downloadMediaFile(
                         liveSelectedPost.mediaUrl,
-                        `aurachat_${liveSelectedPost.id}`,
+                        `chatix_${liveSelectedPost.id}`,
                         liveSelectedPost.type === 'reel' || liveSelectedPost.mediaType === 'video' ? 'video' : 'image'
                       )
                     }
@@ -986,7 +986,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
             <div>
               <div className="font-bold text-xs">{currentUser.displayName}</div>
-              <div className="text-[11px] text-slate-400">aurachat.app/@{currentUser.username}</div>
+              <div className="text-[11px] text-slate-400">chatix.app/@{currentUser.username}</div>
             </div>
 
             <button

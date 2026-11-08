@@ -44,7 +44,7 @@ export interface FirestoreErrorInfo {
 }
 
 // Quota Circuit Breaker state persisted in localStorage
-const QUOTA_STORAGE_KEY = 'aurachat_firestore_quota_exceeded_timestamp';
+const QUOTA_STORAGE_KEY = 'chatix_firestore_quota_exceeded_timestamp';
 
 function checkInitialQuota(): boolean {
   // We have a real built-in Shared Express Server (/api/platform-state & /api/events),
@@ -197,7 +197,7 @@ export async function loginWithGoogle(): Promise<User> {
     email: fbUser.email || undefined,
     phone: fbUser.phoneNumber || undefined,
     avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(fbUser.uid)}&backgroundColor=1e293b`,
-    bio: 'AuraChat • Авторизован через Google',
+    bio: 'Chatix • Авторизован через Google',
     isOnline: true,
     lastSeen: 'в сети'
   };
@@ -221,7 +221,7 @@ export async function loginWithEmail(email: string, pass: string): Promise<User>
     username,
     email: fbUser.email || email,
     avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(fbUser.uid)}&backgroundColor=1e293b`,
-    bio: 'AuraChat • Пользователь',
+    bio: 'Chatix • Пользователь',
     isOnline: true,
     lastSeen: 'в сети'
   };
@@ -252,7 +252,7 @@ export async function registerWithEmail(email: string, pass: string, displayName
     username,
     email: fbUser.email || email,
     avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(username)}&backgroundColor=1e293b`,
-    bio: 'Новый пользователь AuraChat',
+    bio: 'Новый пользователь Chatix',
     isOnline: true,
     lastSeen: 'в сети'
   };
@@ -297,7 +297,7 @@ export async function verifyPhoneCodeAndSignIn(confirmationResult: ConfirmationR
     username,
     phone: phoneClean,
     avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(fbUser.uid)}&backgroundColor=1e293b`,
-    bio: 'AuraChat • Вход по номеру телефона',
+    bio: 'Chatix • Вход по номеру телефона',
     isOnline: true,
     lastSeen: 'в сети'
   };
@@ -339,7 +339,7 @@ export interface CloudPlatformState {
   updatedBy?: string;
 }
 
-const CLOUD_SYNC_DOC_ID = '_aurachat_cloud_sync_v2';
+const CLOUD_SYNC_DOC_ID = '_chatix_cloud_sync_v2';
 
 // Helper to strip undefined fields recursively
 function sanitizeForFirestore<T>(obj: T): T {
@@ -492,7 +492,7 @@ export function subscribeToCloudPlatformState(
           if (data && data.chatId && data.message) {
             // Forward real-time message via window BroadcastChannel or trigger state refresh
             if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-              const ch = new BroadcastChannel('aurachat_live_messages_sync');
+              const ch = new BroadcastChannel('chatix_live_messages_sync');
               ch.postMessage({
                 type: 'NEW_CHAT_MESSAGE',
                 chatId: data.chatId,
@@ -510,7 +510,7 @@ export function subscribeToCloudPlatformState(
           const data = JSON.parse(event.data);
           if (data && data.chatId && data.messageId && data.status) {
             if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-              const ch = new BroadcastChannel('aurachat_live_messages_sync');
+              const ch = new BroadcastChannel('chatix_live_messages_sync');
               ch.postMessage({
                 type: 'CHAT_READ_AND_ONLINE',
                 chatId: data.chatId,

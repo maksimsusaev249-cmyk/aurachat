@@ -1,5 +1,5 @@
 /**
- * AuraChat Cloudflare Worker & Pages Fetch Handler
+ * Chatix Cloudflare Worker & Pages Fetch Handler
  * Supports SPA fallback routing and /api/download proxy endpoint
  */
 export default {
@@ -45,6 +45,6 @@ export default {
       }
     }
 
-    return new Response('AuraChat OK', { status: 200 });
+    return new Response('Chatix OK', { status: 200 });
   }
 };

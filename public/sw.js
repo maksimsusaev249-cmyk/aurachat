@@ -1,5 +1,5 @@
 // Lightweight Fast-Install PWA Service Worker (Zero Stale Cache + Background Push & Call Notifications)
-const SW_VERSION = 'aurachat-fast-v4';
+const SW_VERSION = 'chatix-fast-v4';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -22,7 +22,7 @@ self.addEventListener('fetch', (event) => {
 // Background Push Notification handler (works when app is in background or closed)
 self.addEventListener('push', (event) => {
   try {
-    let data = { title: 'AuraChat', body: 'Новое уведомление', url: '/' };
+    let data = { title: 'Chatix', body: 'Новое уведомление', url: '/' };
     if (event.data) {
       try {
         data = event.data.json();
@@ -31,13 +31,13 @@ self.addEventListener('push', (event) => {
       }
     }
     const isCall = data.type === 'call' || data.isCall;
-    const title = data.title || (isCall ? '📞 Входящий звонок AuraChat' : '💬 AuraChat');
+    const title = data.title || (isCall ? '📞 Входящий звонок Chatix' : '💬 Chatix');
     const options = {
       body: data.body || 'Новое сообщение',
       icon: data.icon || '/favicon.ico',
       badge: '/favicon.ico',
       vibrate: isCall ? [500, 200, 500, 200, 500] : [200, 100, 200],
-      tag: isCall ? 'aurachat_call' : 'aurachat_msg',
+      tag: isCall ? 'chatix_call' : 'chatix_msg',
       renotify: true,
       requireInteraction: isCall,
       data: {

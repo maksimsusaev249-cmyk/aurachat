@@ -414,8 +414,8 @@ export const ChannelManagementModal: React.FC<ChannelManagementModalProps> = ({
   };
 
   const handleCopyInvite = () => {
-    const code = chat.inviteCode || 'aurachat_invite';
-    navigator.clipboard.writeText(`https://aurachat.app/join/${code}`);
+    const code = chat.inviteCode || 'chatix_invite';
+    navigator.clipboard.writeText(`https://chatix.app/join/${code}`);
     setShowInviteCopied(true);
     setTimeout(() => setShowInviteCopied(false), 2000);
   };
@@ -1002,7 +1002,7 @@ export const ChannelManagementModal: React.FC<ChannelManagementModalProps> = ({
                   <div className="flex items-center gap-2 truncate mr-2">
                     <Link2 className="w-4 h-4 text-[#64b5f6] shrink-0" />
                     <span className="text-xs font-mono text-[#64b5f6] truncate">
-                      aurachat.app/join/{chat.inviteCode || 'channel_link'}
+                      chatix.app/join/{chat.inviteCode || 'channel_link'}
                     </span>
                   </div>
                   <button

@@ -134,7 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSimpleMode, setIsSimpleMode] = useState<boolean>(() => {
     if (typeof propIsSimpleMode === 'boolean') return propIsSimpleMode;
     try {
-      return localStorage.getItem('aurachat_simple_mode') === 'true';
+      return localStorage.getItem('chatix_simple_mode') === 'true';
     } catch {
       return false;
     }
@@ -143,7 +143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleToggleSimpleMode = (enabled: boolean) => {
     setIsSimpleMode(enabled);
     try {
-      localStorage.setItem('aurachat_simple_mode', String(enabled));
+      localStorage.setItem('chatix_simple_mode', String(enabled));
     } catch {}
     onToggleSimpleMode?.(enabled);
     playReactionSound();
@@ -178,14 +178,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [username, setUsername] = useState(user.username);
-  const [bio, setBio] = useState(user.bio || 'Пользователь AuraChat');
+  const [bio, setBio] = useState(user.bio || 'Пользователь Chatix');
   const [phone, setPhone] = useState(user.phone || '');
   const [profileSaved, setProfileSaved] = useState(false);
 
   React.useEffect(() => {
     setDisplayName(user.displayName);
     setUsername(user.username);
-    setBio(user.bio || 'Пользователь AuraChat');
+    setBio(user.bio || 'Пользователь Chatix');
     setPhone(user.phone || '');
     setCustomPinInput(user.pinCode || '');
   }, [user.id, user.displayName, user.username, user.bio, user.phone, user.pinCode]);
@@ -210,9 +210,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Devices State
   const [sessions, setSessions] = useState([
-    { id: 's_curr', name: 'AuraChat Web (Chrome 124, Windows / macOS)', ip: '178.62.204.12', active: 'Онлайн (Текущий)', isCurrent: true },
-    { id: 's_ios', name: 'AuraChat iOS (iPhone 15 Pro, iOS 17.5)', ip: '89.178.112.44', active: '15 минут назад', isCurrent: false },
-    { id: 's_desk', name: 'AuraChat Desktop (macOS Sonoma, v4.16)', ip: '178.62.204.12', active: 'Вчера в 23:14', isCurrent: false }
+    { id: 's_curr', name: 'Chatix Web (Chrome 124, Windows / macOS)', ip: '178.62.204.12', active: 'Онлайн (Текущий)', isCurrent: true },
+    { id: 's_ios', name: 'Chatix iOS (iPhone 15 Pro, iOS 17.5)', ip: '89.178.112.44', active: '15 минут назад', isCurrent: false },
+    { id: 's_desk', name: 'Chatix Desktop (macOS Sonoma, v4.16)', ip: '178.62.204.12', active: 'Вчера в 23:14', isCurrent: false }
   ]);
   const [terminatedMsg, setTerminatedMsg] = useState(false);
 
@@ -371,7 +371,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           customNotificationName: file.name
         });
         setSoundConfig(updated);
-        playNotificationSound('AuraChat', `Установлен свой звук уведомления: ${file.name}`);
+        playNotificationSound('Chatix', `Установлен свой звук уведомления: ${file.name}`);
       }
     };
     reader.readAsDataURL(file);
@@ -383,7 +383,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const perm = await Notification.requestPermission();
         setPushPermStatus(perm);
         if (perm === 'granted') {
-          playNotificationSound('Уведомления AuraChat включены', 'Звук и баннеры устройства успешно активированы!');
+          playNotificationSound('Уведомления Chatix включены', 'Звук и баннеры устройства успешно активированы!');
         }
       } catch {}
     }
@@ -973,7 +973,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <div>
                 <div className="font-bold text-xs text-white">Информация и версия</div>
-                <div className="text-[10px] text-slate-400">AuraChat Web Architecture</div>
+                <div className="text-[10px] text-slate-400">Chatix Web Architecture</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
@@ -1389,7 +1389,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div>
                           <div className="font-bold text-xs text-white">Удаление аккаунта @{user.username}</div>
                           <p className="text-[11px] text-rose-200/90 mt-0.5 leading-relaxed">
-                            Вы действительно хотите навсегда удалить этот аккаунт из AuraChat? Все ваши личные данные и сессии будут сброшены.
+                            Вы действительно хотите навсегда удалить этот аккаунт из Chatix? Все ваши личные данные и сессии будут сброшены.
                           </p>
                         </div>
                       </div>
@@ -1427,7 +1427,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'account' && (
             <div className="space-y-4 animate-in fade-in">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <RefreshCw className="w-5 h-5 text-[#64b5f6]" /> Управление аккаунтом AuraChat
+                <RefreshCw className="w-5 h-5 text-[#64b5f6]" /> Управление аккаунтом Chatix
               </h3>
 
               {/* Current Active Account Card */}
@@ -1938,7 +1938,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Download className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Установка AuraChat</h3>
+                  <h3 className="text-base font-bold text-white">Установка Chatix</h3>
                   <p className="text-xs text-slate-400">Быстрое скачивание и установка на любое устройство — ПК, Android, iOS</p>
                 </div>
               </div>
@@ -1961,15 +1961,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <a
-                  href="/downloads/aurachat_v3.2.0.apk"
-                  download="aurachat_v3.2.0.apk"
+                  href="/downloads/chatix_v3.2.0.apk"
+                  download="chatix_v3.2.0.apk"
                   onClick={(e) => {
                     e.preventDefault();
-                    const apkBlob = new Blob(['AuraChat Android Client Package v3.2.0'], { type: 'application/vnd.android.package-archive' });
+                    const apkBlob = new Blob(['Chatix Android Client Package v3.2.0'], { type: 'application/vnd.android.package-archive' });
                     const url = URL.createObjectURL(apkBlob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'aurachat_v3.2.0.apk';
+                    a.download = 'chatix_v3.2.0.apk';
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
@@ -2024,7 +2024,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <button
                   onClick={() => {
-                    alert('Для установки на ПК нажмите иконку уровня адреса страницы в браузере «Установить AuraChat» или нажмите Ctrl+D, чтобы добавить ярлык!');
+                    alert('Для установки на ПК нажмите иконку уровня адреса страницы в браузере «Установить Chatix» или нажмите Ctrl+D, чтобы добавить ярлык!');
                   }}
                   className="w-full py-2.5 bg-[#5288c1] hover:bg-blue-500 text-white rounded-xl font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer text-xs"
                 >
@@ -2056,7 +2056,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => playNotificationSound('Проверка уведомления', 'Звук уведомления AuraChat работает!')}
+                    onClick={() => playNotificationSound('Проверка уведомления', 'Звук уведомления Chatix работает!')}
                     className="px-3 py-1.5 rounded-xl bg-[#0077FF] hover:bg-blue-500 text-white text-[11px] font-bold transition cursor-pointer shrink-0"
                   >
                     🔊 Проверить звук
@@ -2148,7 +2148,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {([
                     { id: 'device_system', label: '📱 Звук устройства' },
-                    { id: 'melody_vk', label: '🎵 AuraChat' },
+                    { id: 'melody_vk', label: '🎵 Chatix' },
                     { id: 'classic_phone', label: '☎️ Классический' },
                     { id: 'silent', label: '🔕 Без звука' }
                   ] as Array<{ id: RingtoneMode; label: string }>).map((opt) => (
@@ -3399,7 +3399,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {([
                     { id: 'device_system', label: '📱 Звук устройства' },
-                    { id: 'melody_vk', label: '🎵 Мелодия AuraChat' },
+                    { id: 'melody_vk', label: '🎵 Мелодия Chatix' },
                     { id: 'classic_phone', label: '☎️ Классический звонок' }
                   ] as Array<{ id: RingtoneMode; label: string }>).map((ring) => (
                     <button
@@ -3470,7 +3470,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     AC
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-white">AuraChat Web Applet</h4>
+                    <h4 className="font-bold text-sm text-white">Chatix Web Applet</h4>
                     <p className="text-[11px] text-slate-400 font-mono">Версия 3.2.0 (Сборка 2026 Stable)</p>
                   </div>
                 </div>

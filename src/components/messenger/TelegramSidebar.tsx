@@ -303,7 +303,7 @@ export const TelegramSidebar: React.FC<TelegramSidebarProps> = ({
             <button
               onClick={onOpenMainMenu || onOpenSettings}
               className="p-1.5 -ml-1 rounded-lg text-[#939393] hover:text-white hover:bg-[#2c2d2e] transition cursor-pointer shrink-0 flex items-center justify-center"
-              title="Меню AuraChat (Контакты, Настройки, Смена аккаунта)"
+              title="Меню Chatix (Контакты, Настройки, Смена аккаунта)"
             >
               <Menu className="w-5 h-5 text-[#71aaeb]" />
             </button>

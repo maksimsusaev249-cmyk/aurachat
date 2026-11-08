@@ -207,7 +207,7 @@ export function getUnifiedGlobalUsersDirectory(
 
   // 2. Custom contacts from LocalStorage
   try {
-    const rawContacts = localStorage.getItem('aurachat_custom_contacts');
+    const rawContacts = localStorage.getItem('chatix_custom_contacts');
     if (rawContacts) {
       const parsedContacts: ContactItem[] = JSON.parse(rawContacts);
       if (Array.isArray(parsedContacts)) {
@@ -239,7 +239,7 @@ export function getUnifiedGlobalUsersDirectory(
           displayName: m.displayName,
           username: m.username,
           avatarUrl: m.avatarUrl,
-          bio: m.customTitle || 'Пользователь AuraChat'
+          bio: m.customTitle || 'Пользователь Chatix'
         });
       });
     });

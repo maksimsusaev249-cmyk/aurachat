@@ -3,7 +3,7 @@ import { User, Chat, Post, Story } from '../types';
 export const currentUserMock: User = {
   id: 'usr_me_777',
   phone: '+7 (999) 000-11-22',
-  email: 'architect@aurachat.internal',
+  email: 'architect@chatix.internal',
   username: 'tech_lead',
   displayName: 'Максим (Tech Lead)',
   avatarUrl: 'https://api.dicebear.com/7.x/adventurer/svg?seed=AlexNova&backgroundColor=1e293b',
@@ -80,10 +80,10 @@ export const mockChats: Chat[] = [
   {
     id: 'chat_channel_news',
     type: 'channel',
-    title: '📢 AuraChat Platform Updates',
-    avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=AuraChatChannel&backgroundColor=2563eb',
+    title: '📢 Chatix Platform Updates',
+    avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=ChatixChannel&backgroundColor=2563eb',
     isPrivate: false,
-    inviteCode: 'aurachat_channel',
+    inviteCode: 'chatix_channel',
     membersCount: 45200,
     lastMessage: 'Выпущен релиз v1.2: Поддержка кружочков 60 FPS и приватные ветки',
     lastMessageTime: '09:15',

@@ -7,8 +7,8 @@ interface BeforeInstallPromptEvent extends Event {
 
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => {
-    if (typeof window !== 'undefined' && (window as any).__aurachatDeferredPrompt) {
-      return (window as any).__aurachatDeferredPrompt as BeforeInstallPromptEvent;
+    if (typeof window !== 'undefined' && (window as any).__chatixDeferredPrompt) {
+      return (window as any).__chatixDeferredPrompt as BeforeInstallPromptEvent;
     }
     return null;
   });
@@ -18,7 +18,7 @@ export function usePWAInstall() {
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
-      localStorage.getItem('aurachat_easy_installed') === 'true';
+      localStorage.getItem('chatix_easy_installed') === 'true';
     return isStandalone;
   });
 
@@ -37,53 +37,53 @@ export function usePWAInstall() {
     setIsAndroid(isAndroidDevice);
     setIsDesktop(!isIOSDevice && !isAndroidDevice);
 
-    if ((window as any).__aurachatDeferredPrompt) {
-      setDeferredPrompt((window as any).__aurachatDeferredPrompt);
+    if ((window as any).__chatixDeferredPrompt) {
+      setDeferredPrompt((window as any).__chatixDeferredPrompt);
     }
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      (window as any).__aurachatDeferredPrompt = e;
+      (window as any).__chatixDeferredPrompt = e;
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
 
     const handleGlobalPwaReady = () => {
-      if ((window as any).__aurachatDeferredPrompt) {
-        setDeferredPrompt((window as any).__aurachatDeferredPrompt);
+      if ((window as any).__chatixDeferredPrompt) {
+        setDeferredPrompt((window as any).__chatixDeferredPrompt);
       }
     };
 
     const handleAppInstalled = () => {
-      (window as any).__aurachatDeferredPrompt = null;
-      localStorage.setItem('aurachat_easy_installed', 'true');
+      (window as any).__chatixDeferredPrompt = null;
+      localStorage.setItem('chatix_easy_installed', 'true');
       setIsInstalled(true);
       setDeferredPrompt(null);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('aurachat-pwa-ready', handleGlobalPwaReady);
+    window.addEventListener('chatix-pwa-ready', handleGlobalPwaReady);
     window.addEventListener('appinstalled', handleAppInstalled);
-    window.addEventListener('aurachat-pwa-installed', handleAppInstalled);
+    window.addEventListener('chatix-pwa-installed', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('aurachat-pwa-ready', handleGlobalPwaReady);
+      window.removeEventListener('chatix-pwa-ready', handleGlobalPwaReady);
       window.removeEventListener('appinstalled', handleAppInstalled);
-      window.removeEventListener('aurachat-pwa-installed', handleAppInstalled);
+      window.removeEventListener('chatix-pwa-installed', handleAppInstalled);
     };
   }, []);
 
   // 1-Click Easy Install: tries native PWA prompt first, otherwise activates instant standalone mode
   const promptInstall = async (): Promise<'accepted' | 'instant_activated'> => {
     const activePrompt =
-      deferredPrompt || ((window as any).__aurachatDeferredPrompt as BeforeInstallPromptEvent | null);
+      deferredPrompt || ((window as any).__chatixDeferredPrompt as BeforeInstallPromptEvent | null);
     if (activePrompt) {
       try {
         await activePrompt.prompt();
         const choice = await activePrompt.userChoice;
         if (choice.outcome === 'accepted') {
-          (window as any).__aurachatDeferredPrompt = null;
-          localStorage.setItem('aurachat_easy_installed', 'true');
+          (window as any).__chatixDeferredPrompt = null;
+          localStorage.setItem('chatix_easy_installed', 'true');
           setIsInstalled(true);
           setDeferredPrompt(null);
           return 'accepted';
@@ -92,7 +92,7 @@ export function usePWAInstall() {
     }
 
     // Instant in-place activation without needing external package parsers
-    localStorage.setItem('aurachat_easy_installed', 'true');
+    localStorage.setItem('chatix_easy_installed', 'true');
     setIsInstalled(true);
     return 'instant_activated';
   };
@@ -100,7 +100,7 @@ export function usePWAInstall() {
   // Download self-launching HTML shortcut (works even when JS is restricted via meta refresh + direct button)
   const downloadApk = async (): Promise<'native_installed' | 'launcher_downloaded'> => {
     const activePrompt =
-      deferredPrompt || ((window as any).__aurachatDeferredPrompt as BeforeInstallPromptEvent | null);
+      deferredPrompt || ((window as any).__chatixDeferredPrompt as BeforeInstallPromptEvent | null);
     if (activePrompt) {
       const res = await promptInstall();
       if (res === 'accepted') return 'native_installed';
@@ -113,7 +113,7 @@ export function usePWAInstall() {
   <meta charset="UTF-8" />
   <meta http-equiv="refresh" content="0; url=${appUrl}/" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>AuraChat — Быстрый запуск</title>
+  <title>Chatix — Быстрый запуск</title>
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 24px; width: 100%; height: 100%; background: #0e1621; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
@@ -127,9 +127,9 @@ export function usePWAInstall() {
 <body>
   <div class="card">
     <div class="logo">A</div>
-    <h1>AuraChat v2.5</h1>
+    <h1>Chatix v2.5</h1>
     <p>Нажмите кнопку ниже для мгновенного входа в приложение:</p>
-    <a class="btn" href="${appUrl}/">🚀 Открыть AuraChat</a>
+    <a class="btn" href="${appUrl}/">🚀 Открыть Chatix</a>
   </div>
   <script>
     window.location.href = "${appUrl}/";
@@ -141,19 +141,19 @@ export function usePWAInstall() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'AuraChat-Start.html';
+    a.download = 'Chatix-Start.html';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    localStorage.setItem('aurachat_easy_installed', 'true');
+    localStorage.setItem('chatix_easy_installed', 'true');
     setIsInstalled(true);
     return 'launcher_downloaded';
   };
 
   const downloadDesktopInstaller = async (): Promise<'native_installed' | 'shortcut_downloaded'> => {
     const activePrompt =
-      deferredPrompt || ((window as any).__aurachatDeferredPrompt as BeforeInstallPromptEvent | null);
+      deferredPrompt || ((window as any).__chatixDeferredPrompt as BeforeInstallPromptEvent | null);
     if (activePrompt) {
       const res = await promptInstall();
       if (res === 'accepted') return 'native_installed';
@@ -164,19 +164,19 @@ export function usePWAInstall() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'AuraChat.url';
+    a.download = 'Chatix.url';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    localStorage.setItem('aurachat_easy_installed', 'true');
+    localStorage.setItem('chatix_easy_installed', 'true');
     setIsInstalled(true);
     return 'shortcut_downloaded';
   };
 
   return {
     isInstallable: Boolean(
-      deferredPrompt || (typeof window !== 'undefined' && (window as any).__aurachatDeferredPrompt)
+      deferredPrompt || (typeof window !== 'undefined' && (window as any).__chatixDeferredPrompt)
     ),
     isInstalled,
     isIOS,

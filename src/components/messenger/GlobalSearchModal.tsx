@@ -178,7 +178,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           avatar:
             u.avatar ||
             `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(rawName)}&backgroundColor=182533`,
-          bio: u.bio || 'Пользователь AuraChat',
+          bio: u.bio || 'Пользователь Chatix',
           phone: u.phone,
           email: u.email
         });
@@ -232,7 +232,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
           name: m.displayName,
           username: m.username,
           avatar: m.avatarUrl,
-          bio: m.customTitle || 'Пользователь AuraChat'
+          bio: m.customTitle || 'Пользователь Chatix'
         });
       });
     });
@@ -354,7 +354,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       if (r.mediaUrl) {
         list.push({
           id: r.id,
-          title: r.caption || 'Клип AuraChat',
+          title: r.caption || 'Клип Chatix',
           author: r.userName,
           authorId: r.userId,
           authorAvatar: r.userAvatar,

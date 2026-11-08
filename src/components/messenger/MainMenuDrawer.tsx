@@ -90,14 +90,14 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
       {/* Drawer Container (VKontakte Side Menu) */}
       <div className="relative w-80 max-w-[85vw] h-full bg-[#222222] border-r border-[#2e2e2e] text-[#e1e3e6] shadow-2xl flex flex-col z-10 overflow-hidden">
         
-        {/* AuraChat Header + Account Switcher */}
+        {/* Chatix Header + Account Switcher */}
         <div className="p-4 bg-[#222222] border-b border-[#2e2e2e] shrink-0 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-lg bg-[#0077FF] text-white font-black text-xs flex items-center justify-center">
                 AC
               </span>
-              <h3 className="font-bold text-sm text-white">AuraChat</h3>
+              <h3 className="font-bold text-sm text-white">Chatix</h3>
             </div>
             <button
               onClick={onClose}
@@ -107,7 +107,7 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
             </button>
           </div>
 
-          {/* Current User Profile Card (AuraChat ID Switcher) */}
+          {/* Current User Profile Card (Chatix ID Switcher) */}
           <div
             onClick={() => setIsAccountsExpanded(!isAccountsExpanded)}
             className="p-2.5 rounded-xl bg-[#2c2d2e] hover:bg-[#363738] flex items-center justify-between cursor-pointer transition select-none"
@@ -123,7 +123,7 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
                   <span>{currentUser.displayName}</span>
                   {currentUser.hasPin && <Lock className="w-3 h-3 text-[#71aaeb] shrink-0" />}
                 </div>
-                <div className="text-[11px] text-[#71aaeb] truncate">@{currentUser.username} • AuraChat ID</div>
+                <div className="text-[11px] text-[#71aaeb] truncate">@{currentUser.username} • Chatix ID</div>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -138,7 +138,7 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
           {isAccountsExpanded && (
             <div className="p-2 rounded-xl bg-[#19191a] border border-[#2e2e2e] space-y-1">
               <div className="text-[10px] font-semibold text-[#828282] uppercase tracking-wider px-1 py-0.5 flex items-center justify-between">
-                <span>Аккаунты AuraChat</span>
+                <span>Аккаунты Chatix</span>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -373,7 +373,7 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
               </div>
               <div className="text-left">
                 <div className="font-semibold text-sm">Тема оформления</div>
-                <div className="text-[10px] text-[#828282]">Тёмная тема AuraChat</div>
+                <div className="text-[10px] text-[#828282]">Тёмная тема Chatix</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-[#828282]" />
@@ -457,7 +457,7 @@ export const MainMenuDrawer: React.FC<MainMenuDrawerProps> = ({
                   <Download className="w-4 h-4" />
                 </div>
                 <div className="text-left">
-                  <div className="font-semibold text-sm">Приложение AuraChat</div>
+                  <div className="font-semibold text-sm">Приложение Chatix</div>
                   <div className="text-[10px] text-[#828282]">Установка на ПК, Android и iOS</div>
                 </div>
               </div>

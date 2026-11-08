@@ -41,7 +41,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
     const res = await promptInstall();
     setIsInstallingNow(false);
     if (res === 'accepted') {
-      setDownloadSuccess('Готово! AuraChat установлен на ваше устройство.');
+      setDownloadSuccess('Готово! Chatix установлен на ваше устройство.');
     } else {
       setDownloadSuccess('Быстрый режим приложения активирован! Можете пользоваться сразу.');
     }
@@ -50,10 +50,10 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
   const handleDownloadLauncher = async () => {
     if (isAndroid) {
       await downloadApk();
-      setDownloadSuccess('Файл быстрого запуска AuraChat-Start.html сохранён! Откройте его в браузере.');
+      setDownloadSuccess('Файл быстрого запуска Chatix-Start.html сохранён! Откройте его в браузере.');
     } else {
       await downloadDesktopInstaller();
-      setDownloadSuccess('Ярлык AuraChat.url сохранён! Перетащите его на Рабочий стол.');
+      setDownloadSuccess('Ярлык Chatix.url сохранён! Перетащите его на Рабочий стол.');
     }
   };
 
@@ -102,7 +102,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
           {/* 1-CLICK PRIMARY BUTTON */}
           <div className="p-4 rounded-2xl bg-[#121b24] border border-[#243344] space-y-3 text-center">
             <p className="text-xs text-slate-300 leading-relaxed">
-              Нажмите кнопку ниже для мгновенной установки <strong>AuraChat</strong> на телефон или компьютер без скачивания тяжёлых файлов:
+              Нажмите кнопку ниже для мгновенной установки <strong>Chatix</strong> на телефон или компьютер без скачивания тяжёлых файлов:
             </p>
 
             <button
@@ -175,7 +175,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({ isOpen, onClos
 
         {/* Footer */}
         <div className="px-5 py-3.5 bg-[#121b24] border-t border-[#202d3a] flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">AuraChat v2.5 • Работает на всех устройствах</span>
+          <span className="text-[11px] text-slate-400">Chatix v2.5 • Работает на всех устройствах</span>
           <button
             type="button"
             onClick={onClose}

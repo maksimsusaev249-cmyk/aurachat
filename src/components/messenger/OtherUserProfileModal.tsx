@@ -99,7 +99,7 @@ export const OtherUserProfileModal: React.FC<OtherUserProfileModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-xs select-none">
-      {/* AuraChat User Profile Modal */}
+      {/* Chatix User Profile Modal */}
       <div 
         className="w-full max-w-md bg-[#222222] border border-[#2e2e2e] rounded-2xl shadow-2xl overflow-hidden flex flex-col text-[#e1e3e6] h-[85vh] max-h-[680px] min-h-0 relative"
         onClick={(e) => e.stopPropagation()}
@@ -112,7 +112,7 @@ export const OtherUserProfileModal: React.FC<OtherUserProfileModalProps> = ({
           >
             ‹ Назад
           </button>
-          <span className="font-bold text-xs text-white">Профиль AuraChat</span>
+          <span className="font-bold text-xs text-white">Профиль Chatix</span>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg bg-[#2c2d2e] text-[#828282] hover:text-white transition cursor-pointer"
@@ -123,7 +123,7 @@ export const OtherUserProfileModal: React.FC<OtherUserProfileModalProps> = ({
 
         {/* Scrollable Profile Body */}
         <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4 scrollbar-thin bg-[#141414] [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
-          {/* AuraChat Profile Header Card */}
+          {/* Chatix Profile Header Card */}
           <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl p-4 flex flex-col items-center text-center space-y-2.5">
             <div className="relative">
               <img
@@ -145,7 +145,7 @@ export const OtherUserProfileModal: React.FC<OtherUserProfileModalProps> = ({
               )}
             </div>
 
-            {/* Primary AuraChat Action Buttons: Сообщение & Подписаться */}
+            {/* Primary Chatix Action Buttons: Сообщение & Подписаться */}
             <div className="flex items-center gap-2 w-full pt-1">
               <button
                 onClick={() => {

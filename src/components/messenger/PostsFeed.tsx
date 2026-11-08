@@ -236,7 +236,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
     setDownloadingPostId(post.id);
     downloadMediaFile(
       mediaUrl,
-      `aurachat_post_${post.userName}_${post.id}`,
+      `chatix_post_${post.userName}_${post.id}`,
       post.mediaType === 'video' ? 'video' : 'image',
       (status) => {
         if (status === 'done') {
@@ -377,7 +377,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
         <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl p-3.5 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="font-bold text-sm text-white">AuraChat · Новости</h2>
+              <h2 className="font-bold text-sm text-white">Chatix · Новости</h2>
               <span className="px-2 py-0.5 rounded-md bg-[#2c2d2e] text-[11px] text-[#939393]">
                 Лента и сообщества
               </span>
@@ -512,7 +512,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
               <div className="bg-[#222222] border border-[#2e2e2e] rounded-2xl p-3.5 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-sm text-white truncate">Сообщества AuraChat</h3>
+                    <h3 className="font-bold text-sm text-white truncate">Сообщества Chatix</h3>
                     <p className="text-[11px] text-[#939393] truncate">
                       Ваши подписки и каталог открытых и закрытых сообществ
                     </p>
@@ -1152,7 +1152,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                           {post.music.artist} — {post.music.title}
                         </div>
                         <div className="text-[11px] text-[#828282]">
-                          AuraChat Музыка • {post.music.duration}
+                          Chatix Музыка • {post.music.duration}
                         </div>
                       </div>
                     </div>
@@ -1299,7 +1299,7 @@ export const PostsFeed: React.FC<PostsFeedProps> = ({
                   {isGifPickerOpen && (
                     <div className="p-3 bg-[#19191a] border border-[#2e2e2e] rounded-xl space-y-2.5">
                       <div className="flex items-center justify-between text-[11px] font-semibold text-[#e1e3e6]">
-                        <span>Каталог GIF AuraChat</span>
+                        <span>Каталог GIF Chatix</span>
                         <button
                           onClick={() => setActiveGifPickerPostId(null)}
                           className="text-[#828282] hover:text-white p-1 cursor-pointer"

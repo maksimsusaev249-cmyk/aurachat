@@ -1,4 +1,4 @@
-// Real Audio, Custom Device Ringtone, Notification Sound & Microphone Utility for AuraChat
+// Real Audio, Custom Device Ringtone, Notification Sound & Microphone Utility for Chatix
 
 export type RingtoneMode = 'custom' | 'device_system' | 'melody_vk' | 'classic_phone' | 'silent';
 export type NotificationSoundMode = 'custom' | 'device_system' | 'vk_knock' | 'chime' | 'silent';
@@ -16,7 +16,7 @@ export interface AuraSoundSettings {
   uiSoundsEnabled: boolean; // Пищалка интерфейса (по умолчанию выключена)
 }
 
-const SOUND_SETTINGS_STORAGE_KEY = 'aurachat_sound_settings_v1';
+const SOUND_SETTINGS_STORAGE_KEY = 'chatix_sound_settings_v1';
 
 const DEFAULT_SOUND_SETTINGS: AuraSoundSettings = {
   ringtoneMode: 'device_system',
@@ -267,7 +267,7 @@ export const triggerDeviceNotification = (
           body,
           icon: icon || '/favicon.ico',
           badge: '/favicon.ico',
-          tag: options?.tag || (options?.isCall ? 'aurachat_call' : 'aurachat_msg'),
+          tag: options?.tag || (options?.isCall ? 'chatix_call' : 'chatix_msg'),
           renotify: true,
           requireInteraction: Boolean(options?.isCall),
           silent: false
@@ -427,10 +427,10 @@ export const startIncomingRingtone = (callerName?: string) => {
 
     if (callerName) {
       triggerDeviceNotification(
-        '📞 Входящий звонок AuraChat',
+        '📞 Входящий звонок Chatix',
         `${callerName} вызывает вас...`,
         undefined,
-        { isCall: true, tag: 'aurachat_incoming_call' }
+        { isCall: true, tag: 'chatix_incoming_call' }
       );
     }
 

@@ -70,7 +70,7 @@ export const VanillaClientView: React.FC = () => {
           <div className="w-full flex justify-center">
             <div className="w-full max-w-[500px] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl bg-[#0f172a]">
               <iframe
-                title="Vanilla JS AuraChat Client"
+                title="Vanilla JS Chatix Client"
                 srcDoc={vanillaClientHtml}
                 sandbox="allow-scripts allow-same-origin allow-forms"
                 className="w-full h-[640px] border-none"

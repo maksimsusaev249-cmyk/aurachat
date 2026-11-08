@@ -347,7 +347,7 @@ export const ShareReelModal: React.FC<ShareReelModalProps> = ({
 
         {/* Modal Footer */}
         <div className="p-3.5 border-t border-[#243344] bg-[#0e1621]/80 flex justify-between items-center shrink-0">
-          <span className="text-[11px] text-slate-400 font-medium">AuraChat</span>
+          <span className="text-[11px] text-slate-400 font-medium">Chatix</span>
           <button
             onClick={onClose}
             className="px-5 py-1.5 rounded-xl bg-[#243344] hover:bg-slate-700 text-white text-xs font-semibold transition cursor-pointer"

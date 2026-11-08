@@ -96,7 +96,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
     setDownloadingReelId(reel.id);
     downloadMediaFile(
       reel.mediaUrl,
-      `aurachat_reel_${reel.userName}_${reel.id}`,
+      `chatix_reel_${reel.userName}_${reel.id}`,
       reel.mediaType === 'video' ? 'video' : 'image',
       (status) => {
         if (status === 'done') {
@@ -540,7 +540,7 @@ export const ReelsFeed: React.FC<ReelsFeedProps> = ({
                         className="w-20 h-20 rounded-full object-cover border-2 border-[#0077FF] mb-4 shadow-xl"
                       />
                       <p className="text-sm font-semibold text-white max-w-xs leading-relaxed">
-                        {reel.caption || 'Клип AuraChat'}
+                        {reel.caption || 'Клип Chatix'}
                       </p>
                     </div>
                   )}

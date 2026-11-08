@@ -22,7 +22,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught AuraChat error:', error, errorInfo);
+    console.error('Uncaught Chatix error:', error, errorInfo);
   }
 
   public render() {
@@ -48,7 +48,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
             maxWidth: '480px',
             width: '100%'
           }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px' }}>AuraChat</h2>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '12px' }}>Chatix</h2>
             <p style={{ fontSize: '14px', color: '#939393', marginBottom: '20px', lineHeight: '1.5' }}>
               Произошла ошибка при загрузке данных. Нажмите кнопку ниже для перезапуска приложения.
             </p>
@@ -71,7 +71,7 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
                 fontSize: '14px'
               }}
             >
-              Перезапустить AuraChat
+              Перезапустить Chatix
             </button>
           </div>
         </div>
@@ -86,13 +86,13 @@ if (typeof window !== 'undefined') {
   // Capture beforeinstallprompt early for 1-click PWA install
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    (window as any).__aurachatDeferredPrompt = e;
-    window.dispatchEvent(new CustomEvent('aurachat-pwa-ready'));
+    (window as any).__chatixDeferredPrompt = e;
+    window.dispatchEvent(new CustomEvent('chatix-pwa-ready'));
   });
 
   window.addEventListener('appinstalled', () => {
-    (window as any).__aurachatDeferredPrompt = null;
-    window.dispatchEvent(new CustomEvent('aurachat-pwa-installed'));
+    (window as any).__chatixDeferredPrompt = null;
+    window.dispatchEvent(new CustomEvent('chatix-pwa-installed'));
   });
 
   if ('serviceWorker' in navigator && window.location.protocol === 'https:') {

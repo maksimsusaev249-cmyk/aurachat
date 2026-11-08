@@ -55,7 +55,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       allChats.forEach((chat) => {
-        const link = `https://aurachat.app/join/${chat.inviteCode || chat.id}`;
+        const link = `https://chatix.app/join/${chat.inviteCode || chat.id}`;
         QRCode.toDataURL(link, { width: 160, margin: 1, color: { dark: '#0e1621', light: '#ffffff' } })
           .then((url) => {
             setChatQrMap((prev) => ({ ...prev, [chat.id]: url }));
@@ -372,7 +372,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
               <h3 className="font-bold text-base text-white">{scannedChat.title}</h3>
               <p className="text-xs text-[#64b5f6] font-mono mt-0.5">
-                aurachat.app/join/{scannedChat.inviteCode || 'group_invite'}
+                chatix.app/join/{scannedChat.inviteCode || 'group_invite'}
               </p>
 
               {/* Status Pill: Private vs Public */}

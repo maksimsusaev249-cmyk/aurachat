@@ -1,6 +1,6 @@
 {
-  "name": "TeleGramm - Hybrid Messenger & Social Platform",
-  "description": "Fullstack architecture, SQL DDL schema, backend OTP/WebSocket server, and interactive client for a Telegram and Instagram hybrid platform.",
+  "name": "Chatix - Hybrid Messenger & Social Platform",
+  "description": "Fullstack architecture, SQL DDL schema, backend OTP/WebSocket server, and interactive client for a Chatix hybrid platform.",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

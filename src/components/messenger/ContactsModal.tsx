@@ -93,7 +93,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
   const [filterTab, setFilterTab] = useState<'all' | 'online'>('all');
   const [contacts, setContacts] = useState<ContactItem[]>(() => {
     try {
-      const saved = localStorage.getItem('aurachat_custom_contacts');
+      const saved = localStorage.getItem('chatix_custom_contacts');
       if (saved) return JSON.parse(saved);
     } catch {}
     return initialContactsList;
@@ -121,7 +121,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
         userId: acc.id,
         displayName: acc.displayName,
         username: acc.username,
-        phone: acc.phone || acc.email || 'Пользователь AuraChat',
+        phone: acc.phone || acc.email || 'Пользователь Chatix',
         avatarUrl: acc.avatarUrl,
         isOnline: accIsOnline,
         statusText: accStatusText
@@ -160,7 +160,7 @@ export const ContactsModal: React.FC<ContactsModalProps> = ({
     const nextContacts = [newContact, ...contacts];
     setContacts(nextContacts);
     try {
-      localStorage.setItem('aurachat_custom_contacts', JSON.stringify(nextContacts));
+      localStorage.setItem('chatix_custom_contacts', JSON.stringify(nextContacts));
     } catch {}
     setNewName('');
     setNewPhone('');

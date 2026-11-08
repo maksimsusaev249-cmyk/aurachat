@@ -106,7 +106,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               onClick={() =>
                 downloadMediaFile(
                   currentStory.mediaUrl,
-                  `aurachat_story_${currentStory.id}`,
+                  `chatix_story_${currentStory.id}`,
                   currentStory.mediaType === 'video' ? 'video' : 'image'
                 )
               }

@@ -1308,7 +1308,7 @@ export const CameraStudioModal: React.FC<CameraStudioModalProps> = ({
                   <div className="space-y-2 pt-2 border-t border-[#243344]">
                     <input
                       type="text"
-                      placeholder="Вставьте ссылку (например: https://example.com или aurachat.app/channel)..."
+                      placeholder="Вставьте ссылку (например: https://example.com или chatix.app/channel)..."
                       value={linkUrl}
                       onChange={(e) => setLinkUrl(e.target.value)}
                       className="w-full bg-[#1e2a38] border border-[#283748] rounded-xl px-3 py-2 text-xs text-cyan-300 placeholder-slate-400 outline-none focus:border-[#5288c1] font-mono"
