@@ -28,16 +28,13 @@ export const WebRTCCallModal: React.FC<WebRTCCallModalProps> = ({
       return;
     }
 
-    const t1 = setTimeout(() => setIceState('gathering'), 800);
-    const t2 = setTimeout(() => setIceState('connected'), 1800);
+    setIceState('connected');
 
     const timer = setInterval(() => {
       setCallDuration((prev) => prev + 1);
     }, 1000);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
       clearInterval(timer);
     };
   }, [isOpen]);

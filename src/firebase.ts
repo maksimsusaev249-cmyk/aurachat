@@ -527,8 +527,8 @@ export function subscribeToCloudPlatformState(
     }
   } catch {}
 
-  // 3. Periodic poll fallback every 4 seconds
-  const pollInterval = setInterval(fetchLatestState, 4000);
+  // 3. Periodic poll fallback every 300ms for instant realtime sync
+  const pollInterval = setInterval(fetchLatestState, 300);
 
   return () => {
     isDisposed = true;
@@ -882,7 +882,7 @@ export function subscribeToCallSignalsFromCloud(
         handleIncomingSignal(data.signal);
       }
     } catch {}
-  }, 1200);
+  }, 200);
 
   return () => {
     isDisposed = true;
