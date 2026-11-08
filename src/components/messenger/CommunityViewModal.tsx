@@ -903,8 +903,28 @@ export const CommunityViewModal: React.FC<CommunityViewModalProps> = ({
     (p) => p.communityId === community.id || p.communityTitle === community.title
   );
 
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    if (deltaX > 75 || deltaY > 110) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#141414] flex flex-col text-[#e1e3e6] w-full h-full select-none overflow-hidden">
+    <div 
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="fixed inset-0 z-50 bg-[#141414] flex flex-col text-[#e1e3e6] w-full h-full select-none overflow-hidden"
+    >
       <div className="bg-[#141414] w-full h-full flex flex-col relative overflow-hidden">
         
         {/* VK Top Navigation Bar — Оптимизировано под iPhone 13 и мобильные экраны */}

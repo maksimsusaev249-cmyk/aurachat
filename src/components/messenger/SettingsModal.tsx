@@ -624,8 +624,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onUpdateUser({ settings: { ...user.settings, folders: updated } as any });
   };
 
+  const touchStartXRef = React.useRef(0);
+  const touchStartYRef = React.useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    if (deltaX > 75 || deltaY > 110) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 select-none">
+    <div 
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-6 select-none"
+    >
       <div className="bg-[#17212b] border border-[#243344] rounded-3xl w-full max-w-2xl h-[650px] max-h-[90vh] flex flex-col md:flex-row text-white shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 min-h-0">
         
         {/* Mobile & Desktop Close Button */}

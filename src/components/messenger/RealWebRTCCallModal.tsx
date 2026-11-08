@@ -963,6 +963,7 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     }
     const pc = initPeerConnection();
     syncLocalTracksToPeerConnection(pc);
+    await negotiateWebRtcOffer(pc);
 
     broadcastSignal({
       type: 'CALL_ANSWERED',
