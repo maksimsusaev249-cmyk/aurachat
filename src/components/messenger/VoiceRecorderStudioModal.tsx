@@ -345,11 +345,6 @@ export const VoiceRecorderStudioModal: React.FC<VoiceRecorderStudioModalProps> =
               <h3 className="font-bold text-sm text-white">
                 {phase === 'recording' ? 'Запись голосового сообщения' : 'Предпросмотр и отправка'}
               </h3>
-              <p className="text-[11px] text-slate-400">
-                {phase === 'recording' 
-                  ? (micStatus === 'recording' ? '🎙️ Идет запись голоса' : '🎙️ Режим диктофона') 
-                  : 'Прослушайте свою запись перед отправкой в чат'}
-              </p>
             </div>
           </div>
 
@@ -363,47 +358,6 @@ export const VoiceRecorderStudioModal: React.FC<VoiceRecorderStudioModalProps> =
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {/* Microphone Selector & Live Loopback Toggle */}
-        {phase === 'recording' && (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-[#131c26] p-2.5 rounded-2xl border border-[#243344] text-xs">
-            {audioInputs.length > 0 ? (
-              <select
-                value={selectedMicId}
-                onChange={(e) => {
-                  setSelectedMicId(e.target.value);
-                  startRecording(e.target.value);
-                }}
-                className="flex-1 bg-[#1e2a38] text-slate-200 rounded-xl px-2.5 py-1.5 text-[11px] outline-none border border-[#283748] truncate"
-              >
-                <option value="">Микрофон по умолчанию</option>
-                {audioInputs.map((mic, idx) => (
-                  <option key={mic.deviceId || idx} value={mic.deviceId}>
-                    {mic.label || `Микрофон #${idx + 1}`}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-[11px] text-emerald-400 font-medium px-1">
-                ✓ Системный микрофон подключён
-              </span>
-            )}
-
-            <button
-              type="button"
-              onClick={toggleMicMonitoring}
-              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 border ${
-                monitorMic
-                  ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200'
-                  : 'bg-[#1e2a38] border-[#283748] text-slate-300 hover:text-white'
-              }`}
-              title="Слышать свой голос из микрофона в реальном времени"
-            >
-              {monitorMic ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
-              <span>{monitorMic ? 'Слышу себя: ВКЛ' : 'Слышать себя'}</span>
-            </button>
-          </div>
-        )}
 
         {/* PHASE 1: RECORDING IN PROGRESS */}
         {phase === 'recording' && (
@@ -421,10 +375,6 @@ export const VoiceRecorderStudioModal: React.FC<VoiceRecorderStudioModalProps> =
             <div>
               <div className="text-3xl font-mono font-bold text-white tracking-wider">
                 00:{recordSeconds < 10 ? '0' + recordSeconds : recordSeconds}
-              </div>
-              <div className="text-xs text-rose-400 font-medium flex items-center justify-center gap-1.5 mt-1">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                <span>Говорите в микрофон — идёт запись голоса</span>
               </div>
             </div>
 

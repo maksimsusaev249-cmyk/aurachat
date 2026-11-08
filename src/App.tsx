@@ -1123,15 +1123,11 @@ export default function App() {
   };
 
 
-  // Account Switch handler: requires PIN if target profile is protected by PIN code
-  const handleRequestSwitchUser = (targetUser: User, requirePin: boolean = true) => {
+  // Account Switch handler: instant and seamless account switching
+  const handleRequestSwitchUser = (targetUser: User) => {
     if (!targetUser) return;
     if (isLoggedIn && targetUser.id === currentUser.id) return;
-    if (targetUser.pinCode && targetUser.pinCode.length >= 4) {
-      setPinPromptTargetUser(targetUser);
-    } else {
-      handlePinPromptSuccess(targetUser);
-    }
+    handlePinPromptSuccess(targetUser);
   };
 
   // Called when switching accounts or when 6-digit PIN is verified
