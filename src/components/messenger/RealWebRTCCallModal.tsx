@@ -197,6 +197,24 @@ export const RealWebRTCCallModal: React.FC<RealWebRTCCallModalProps> = ({
     isScreenSharingRef.current = isScreenSharing;
   }, [isScreenSharing]);
 
+  useEffect(() => {
+    if (callStatus === 'connected') {
+      if (session?.isVideo) {
+        setCallNotice(`Видеозвонок начался с ${session.contactName}`);
+      } else {
+        setCallNotice(`Звонок начался с ${session?.contactName || 'абонентом'}`);
+      }
+    }
+  }, [callStatus, session?.isVideo, session?.contactName]);
+
+  useEffect(() => {
+    if (!callNotice) return;
+    const timer = setTimeout(() => {
+      setCallNotice(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [callNotice]);
+
   const voicemailTimeoutRef = useRef<any>(null);
   const callStatusRef = useRef<CallStatus>('ringing');
 
